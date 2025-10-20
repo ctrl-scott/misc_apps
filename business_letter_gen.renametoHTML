@@ -1,0 +1,412 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Business Letter Generator (Local Storage)</title>
+<style>
+  :root { --maxw: 950px; }
+  html, body { background:#fff; color:#000; font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; }
+  body { margin:0; padding:2rem 1rem; display:flex; justify-content:center; }
+  .wrap { width:100%; max-width:var(--maxw); display:grid; gap:1.25rem; grid-template-columns: 1fr; }
+  header h1 { margin:0 0 .25rem 0; font-size:1.5rem; }
+  header p { margin:.25rem 0 0; color:#444; font-size:.95rem; }
+  .grid { display:grid; gap:1rem; grid-template-columns: repeat(2, minmax(0,1fr)); }
+  fieldset { border:1px solid #ddd; border-radius:10px; padding:1rem; }
+  legend { padding:0 .5rem; color:#222; }
+  label { display:block; font-size:.9rem; margin:.5rem 0 .25rem; color:#222; }
+  input[type="text"], input[type="email"], textarea, input[type="date"] {
+    width:100%; padding:.6rem .7rem; border:1px solid #bbb; border-radius:8px; font:inherit; box-sizing:border-box;
+  }
+  textarea { min-height:220px; resize:vertical; }
+  .controls { display:flex; flex-wrap:wrap; gap:.5rem; }
+  button {
+    border:1px solid #333; background:#111; color:#fff; padding:.6rem .9rem; border-radius:8px; cursor:pointer;
+  }
+  button.secondary { background:#f5f5f5; color:#111; border-color:#bbb; }
+  button.warn { background:#8b0000; border-color:#8b0000; }
+  .preview {
+    border:1px solid #000; padding:1.25rem; border-radius:10px; background:#fff;
+  }
+  .letter { max-width:700px; margin:0 auto; line-height:1.4; font-size:1rem; }
+  .addr-block { white-space:pre-line; }
+  .date-line, .subject-line { margin:.5rem 0; }
+  .salutation, .closing { margin:1rem 0; }
+  .body p { margin:.75rem 0; text-align:justify; }
+  .signature { margin-top:2.5rem; white-space:pre-line; }
+  .muted { color:#666; font-size:.9rem; }
+  @media (max-width: 860px) {
+    .grid { grid-template-columns: 1fr; }
+  }
+  @media print {
+    header, .editor, .controls { display:none !important; }
+    .preview { border:none; padding:0; }
+    body { padding:0; }
+  }
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <h1>Business Letter Generator</h1>
+      <p class="muted">Data persists in your browser via Local Storage. Nothing is uploaded.</p>
+    </header>
+
+    <section class="editor">
+      <div class="grid">
+        <fieldset>
+          <legend>Sender</legend>
+          <label for="senderName">Full Name</label>
+          <input id="senderName" type="text" placeholder="Sender Name" />
+          <label for="senderTitle">Title</label>
+          <input id="senderTitle" type="text" placeholder="Director of Operations" />
+          <label for="senderCompany">Company</label>
+          <input id="senderCompany" type="text" placeholder="Example Company, LLC" />
+          <label for="senderStreet">Street</label>
+          <input id="senderStreet" type="text" placeholder="123 Main St" />
+          <label for="senderCityStateZip">City, State ZIP</label>
+          <input id="senderCityStateZip" type="text" placeholder="Birmingham, AL 35203" />
+          <label for="senderEmail">Email</label>
+          <input id="senderEmail" type="email" placeholder="alex.taylor@example.com" />
+          <label for="senderPhone">Phone</label>
+          <input id="senderPhone" type="text" placeholder="(205) 555-1234" />
+        </fieldset>
+
+        <fieldset>
+          <legend>Recipient</legend>
+          <label for="recipName">Full Name</label>
+          <input id="recipName" type="text" placeholder="Recipient Name" />
+          <label for="recipTitle">Title</label>
+          <input id="recipTitle" type="text" placeholder="Hiring Manager" />
+          <label for="recipCompany">Company</label>
+          <input id="recipCompany" type="text" placeholder="Acme Industries" />
+          <label for="recipStreet">Street</label>
+          <input id="recipStreet" type="text" placeholder="456 Market Ave" />
+          <label for="recipCityStateZip">City, State ZIP</label>
+          <input id="recipCityStateZip" type="text" placeholder="Mobile, AL 36602" />
+        </fieldset>
+      </div>
+
+      <div class="grid">
+        <fieldset>
+          <legend>Letter Meta</legend>
+          <label for="letterDate">Date</label>
+          <input id="letterDate" type="date" />
+          <label for="subject">Subject (optional)</label>
+          <input id="subject" type="text" placeholder="Subject of the letter" />
+          <label for="salutation">Salutation</label>
+          <input id="salutation" type="text" placeholder="Dear Mr. Lee:" />
+          <label for="closing">Closing</label>
+          <input id="closing" type="text" placeholder="Sincerely," />
+        </fieldset>
+
+        <fieldset>
+          <legend>Body</legend>
+          <label for="body">Letter Body</label>
+          <textarea id="body" spellcheck="true"></textarea>
+        </fieldset>
+      </div>
+
+      <div class="controls">
+        <button id="saveBtn" title="Save to Local Storage">Save</button>
+        <button id="loadBtn" class="secondary" title="Load from Local Storage">Load</button>
+        <button id="clearBtn" class="warn" title="Clear storage and fields">Clear</button>
+        <button id="printBtn" class="secondary" title="Open system print dialog">Print</button>
+        <button id="exportBtn" class="secondary" title="Export JSON">Export JSON</button>
+      </div>
+    </section>
+
+    <section class="preview">
+      <div class="letter" id="letterPreview" aria-live="polite"></div>
+    </section>
+
+    <footer class="muted">
+      <p>Tip: Use Save to persist this draft. Use Print for a clean printout that hides the editor.</p>
+    </footer>
+<section class="sources" style="margin-top:2rem; border-top:1px solid #ddd; padding-top:1rem;">
+  <h2 style="font-size:1.25rem;">Sources Used (APA Style)</h2>
+  <ul style="line-height:1.5; font-size:.95rem;">
+    <li>
+      Mozilla Developer Network. (n.d.). <i>Window.localStorage</i>. Mozilla Foundation. 
+      Retrieved from <a href="https://developer.mozilla.org/en-US/docs/Web/API/Window/localStorage" target="_blank" rel="noopener">https://developer.mozilla.org/en-US/docs/Web/API/Window/localStorage</a>
+    </li>
+    <li>
+      World Wide Web Consortium (W3C). (2014). <i>HTML5: A vocabulary and associated APIs for HTML and XHTML</i>. 
+      W3C Recommendation. Retrieved from <a href="https://www.w3.org/TR/html5/" target="_blank" rel="noopener">https://www.w3.org/TR/html5/</a>
+    </li>
+    <li>
+      Ecma International. (2023). <i>ECMAScript® 2023 Language Specification (14th ed.)</i>. 
+      Ecma International. Retrieved from <a href="https://262.ecma-international.org/14.0/" target="_blank" rel="noopener">https://262.ecma-international.org/14.0/</a>
+    </li>
+    <li>
+      W3C. (2018). <i>CSS Snapshot 2018</i>. Retrieved from 
+      <a href="https://www.w3.org/TR/css-2018/" target="_blank" rel="noopener">https://www.w3.org/TR/css-2018/</a>
+    </li>
+    <li>
+      Office of Style. (2020). <i>Business letter formatting guidelines</i>. Purdue Online Writing Lab. 
+      Retrieved from <a href="https://owl.purdue.edu/owl/subject_specific_writing/professional_technical_writing/basic_business_letters/index.html" target="_blank" rel="noopener">https://owl.purdue.edu/owl/subject_specific_writing/professional_technical_writing/basic_business_letters/index.html</a>
+    </li>
+  </ul>
+</section>
+  </div>
+
+<script>
+(function () {
+  "use strict";
+
+  const KEY = "business_letter_draft_v1";
+
+  // Inputs
+  const el = {
+    senderName:        document.getElementById("senderName"),
+    senderTitle:       document.getElementById("senderTitle"),
+    senderCompany:     document.getElementById("senderCompany"),
+    senderStreet:      document.getElementById("senderStreet"),
+    senderCityStateZip:document.getElementById("senderCityStateZip"),
+    senderEmail:       document.getElementById("senderEmail"),
+    senderPhone:       document.getElementById("senderPhone"),
+
+    recipName:         document.getElementById("recipName"),
+    recipTitle:        document.getElementById("recipTitle"),
+    recipCompany:      document.getElementById("recipCompany"),
+    recipStreet:       document.getElementById("recipStreet"),
+    recipCityStateZip: document.getElementById("recipCityStateZip"),
+
+    letterDate:        document.getElementById("letterDate"),
+    subject:           document.getElementById("subject"),
+    salutation:        document.getElementById("salutation"),
+    closing:           document.getElementById("closing"),
+    body:              document.getElementById("body"),
+
+    preview:           document.getElementById("letterPreview"),
+
+    saveBtn:           document.getElementById("saveBtn"),
+    loadBtn:           document.getElementById("loadBtn"),
+    clearBtn:          document.getElementById("clearBtn"),
+    printBtn:          document.getElementById("printBtn"),
+    exportBtn:         document.getElementById("exportBtn")
+  };
+
+  // Default lorem ipsum (three paragraphs)
+  const defaultBody = [
+    "Lorem ipsum dolor sit amet, consectetur adipiscing elit. Integer nec odio. Praesent libero. Sed cursus ante dapibus diam. Sed nisi.",
+    "Nulla quis sem at nibh elementum imperdiet. Duis sagittis ipsum. Praesent mauris. Fusce nec tellus sed augue semper porta. Mauris massa.",
+    "Vestibulum lacinia arcu eget nulla. Class aptent taciti sociosqu ad litora torquent per conubia nostra, per inceptos himenaeos."
+  ].join("\n\n");
+
+  // Utility: safe get/set of localStorage
+  function canUseStorage() {
+    try {
+      const t = "__test_ls__";
+      localStorage.setItem(t, "1");
+      localStorage.removeItem(t);
+      return true;
+    } catch (e) { return false; }
+  }
+
+  function collectData() {
+    return {
+      sender: {
+        name: el.senderName.value.trim(),
+        title: el.senderTitle.value.trim(),
+        company: el.senderCompany.value.trim(),
+        street: el.senderStreet.value.trim(),
+        cityStateZip: el.senderCityStateZip.value.trim(),
+        email: el.senderEmail.value.trim(),
+        phone: el.senderPhone.value.trim()
+      },
+      recipient: {
+        name: el.recipName.value.trim(),
+        title: el.recipTitle.value.trim(),
+        company: el.recipCompany.value.trim(),
+        street: el.recipStreet.value.trim(),
+        cityStateZip: el.recipCityStateZip.value.trim()
+      },
+      meta: {
+        date: el.letterDate.value,
+        subject: el.subject.value.trim(),
+        salutation: el.salutation.value.trim(),
+        closing: el.closing.value.trim()
+      },
+      body: el.body.value
+    };
+  }
+
+  function fillFields(data) {
+    if (!data) return;
+    el.senderName.value         = data.sender?.name || "";
+    el.senderTitle.value        = data.sender?.title || "";
+    el.senderCompany.value      = data.sender?.company || "";
+    el.senderStreet.value       = data.sender?.street || "";
+    el.senderCityStateZip.value = data.sender?.cityStateZip || "";
+    el.senderEmail.value        = data.sender?.email || "";
+    el.senderPhone.value        = data.sender?.phone || "";
+
+    el.recipName.value          = data.recipient?.name || "";
+    el.recipTitle.value         = data.recipient?.title || "";
+    el.recipCompany.value       = data.recipient?.company || "";
+    el.recipStreet.value        = data.recipient?.street || "";
+    el.recipCityStateZip.value  = data.recipient?.cityStateZip || "";
+
+    el.letterDate.value         = data.meta?.date || "";
+    el.subject.value            = data.meta?.subject || "";
+    el.salutation.value         = data.meta?.salutation || "";
+    el.closing.value            = data.meta?.closing || "";
+    el.body.value               = data.body || "";
+  }
+
+  function formatAddress(name, title, company, street, cityStateZip) {
+    const lines = [
+      name,
+      title,
+      company,
+      street,
+      cityStateZip
+    ].filter(Boolean);
+    return lines.join("\n");
+  }
+
+  function escapeHtml(s) {
+    return s.replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;', "'":'&#39;'}[m]));
+  }
+
+  function nl2p(text) {
+    // Split on blank lines to paragraphs
+    const paras = String(text || "").split(/\n\s*\n/);
+    return paras.map(t => `<p>${escapeHtml(t.trim())}</p>`).join("");
+  }
+
+  function renderLetter() {
+    const d = collectData();
+
+    // Friendly date display
+    let dateOut = "";
+    if (d.meta.date) {
+      try {
+        const dt = new Date(d.meta.date + "T00:00:00");
+        dateOut = dt.toLocaleDateString(undefined, { year:"numeric", month:"long", day:"numeric" });
+      } catch (e) { dateOut = d.meta.date; }
+    } else {
+      // Default to today if blank
+      const today = new Date();
+      dateOut = today.toLocaleDateString(undefined, { year:"numeric", month:"long", day:"numeric" });
+    }
+
+    const senderAddr = formatAddress(
+      d.sender.name, d.sender.title, d.sender.company, d.sender.street, d.sender.cityStateZip
+    );
+    const recipAddr = formatAddress(
+      d.recipient.name, d.recipient.title, d.recipient.company, d.recipient.street, d.recipient.cityStateZip
+    );
+
+    const subjectLine = d.meta.subject ? `<div class="subject-line"><strong>Subject:</strong> ${escapeHtml(d.meta.subject)}</div>` : "";
+    const salutation  = d.meta.salutation ? escapeHtml(d.meta.salutation) : "Dear Sir or Madam:";
+    const closing     = d.meta.closing ? escapeHtml(d.meta.closing) : "Sincerely,";
+
+    const contactLineParts = [d.sender.email, d.sender.phone].filter(Boolean);
+    const contactLine = contactLineParts.length ? `<div class="muted">${escapeHtml(contactLineParts.join(" · "))}</div>` : "";
+
+    el.preview.innerHTML = `
+      <div class="addr-block">${escapeHtml(senderAddr)}</div>
+      ${contactLine}
+      <div class="date-line">${escapeHtml(dateOut)}</div>
+
+      <div class="addr-block" style="margin-top:1rem;">${escapeHtml(recipAddr)}</div>
+
+      ${subjectLine}
+      <div class="salutation">${salutation}</div>
+
+      <div class="body">
+        ${nl2p(d.body || defaultBody)}
+      </div>
+
+      <div class="closing">${closing}</div>
+
+      <div class="signature">
+        ${escapeHtml(d.sender.name || "")}
+        ${d.sender.title ? "<br>" + escapeHtml(d.sender.title) : ""}
+        ${d.sender.company ? "<br>" + escapeHtml(d.sender.company) : ""}
+      </div>
+    `;
+  }
+
+  function saveDraft() {
+    if (!canUseStorage()) { alert("Local Storage is not available in this browser or context."); return; }
+    const data = collectData();
+    localStorage.setItem(KEY, JSON.stringify(data));
+    alert("Draft saved to Local Storage.");
+  }
+
+  function loadDraft() {
+    if (!canUseStorage()) { alert("Local Storage is not available in this browser or context."); return; }
+    const raw = localStorage.getItem(KEY);
+    if (!raw) { alert("No saved draft was found."); return; }
+    try {
+      const data = JSON.parse(raw);
+      fillFields(data);
+      renderLetter();
+    } catch (e) {
+      alert("Could not parse saved draft.");
+    }
+  }
+
+  function clearAll() {
+    if (confirm("Clear fields and remove the saved draft from Local Storage?")) {
+      Object.values(el).forEach(v => {
+        if (v && (v.tagName === "INPUT" || v.tagName === "TEXTAREA")) v.value = "";
+      });
+      if (canUseStorage()) localStorage.removeItem(KEY);
+      // Refill body with default lorem ipsum for convenience
+      el.body.value = defaultBody;
+      // Reset date to today
+      setTodayIfEmpty();
+      renderLetter();
+    }
+  }
+
+  function setTodayIfEmpty() {
+    if (!el.letterDate.value) {
+      const t = new Date();
+      // yyyy-mm-dd
+      const iso = t.toISOString().slice(0,10);
+      el.letterDate.value = iso;
+    }
+  }
+
+  function exportJson() {
+    const data = collectData();
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "business_letter_draft.json";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  }
+
+  // Wire events
+  [
+    el.senderName, el.senderTitle, el.senderCompany, el.senderStreet, el.senderCityStateZip,
+    el.senderEmail, el.senderPhone, el.recipName, el.recipTitle, el.recipCompany, el.recipStreet,
+    el.recipCityStateZip, el.letterDate, el.subject, el.salutation, el.closing, el.body
+  ].forEach(node => node.addEventListener("input", renderLetter));
+
+  el.saveBtn.addEventListener("click", saveDraft);
+  el.loadBtn.addEventListener("click", loadDraft);
+  el.clearBtn.addEventListener("click", clearAll);
+  el.printBtn.addEventListener("click", () => window.print());
+  el.exportBtn.addEventListener("click", exportJson);
+
+  // Initialize defaults on first load
+  function init() {
+    setTodayIfEmpty();
+    if (!el.body.value.trim()) el.body.value = defaultBody;
+    renderLetter();
+  }
+  init();
+})();
+</script>
+</body>
+</html>
