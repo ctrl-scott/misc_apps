@@ -1,0 +1,552 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>HTML Template Builder</title>
+  <style>
+    :root{
+      --bg:#ffffff; --fg:#111111; --muted:#6b7280; --accent:#2563eb; --border:#e5e7eb; --panel:#f8fafc;
+      --maxw: 960px;
+    }
+    *{box-sizing:border-box}
+    html,body{height:100%}
+    body{margin:0; font-family:system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,Inter,Arial,sans-serif; color:var(--fg); background:var(--bg);}
+    header{padding:12px 16px; border-bottom:1px solid var(--border); display:flex; align-items:center; gap:12px; position:sticky; top:0; background:var(--bg); z-index:10}
+    header h1{font-size:16px; font-weight:600; margin:0}
+
+    .app{display:grid; grid-template-columns: 320px 1fr; min-height:calc(100% - 57px)}
+    aside{border-right:1px solid var(--border); padding:16px; background:var(--panel);}
+    main{padding:16px;}
+
+    .section{margin-bottom:16px; background:#fff; border:1px solid var(--border); border-radius:12px; overflow:hidden}
+    .section h2{margin:0; font-size:14px; padding:10px 12px; background:var(--panel); border-bottom:1px solid var(--border)}
+    .section .content{padding:12px}
+
+    label{display:block; font-size:12px; color:var(--muted); margin-bottom:6px}
+    input[type="text"], input[type="url"], textarea, select{width:100%; padding:10px 12px; border:1px solid var(--border); border-radius:10px; font-size:14px; background:#fff}
+    textarea{min-height:80px;}
+    input[type="file"]{width:100%}
+
+    .btn{display:inline-flex; align-items:center; gap:8px; padding:8px 12px; border:1px solid var(--border); background:#fff; border-radius:10px; cursor:pointer; font-size:14px}
+    .btn.primary{border-color:var(--accent); background:var(--accent); color:white}
+    .btn.ghost{background:transparent}
+    .btn-row{display:flex; gap:8px; flex-wrap:wrap}
+
+    .list{display:flex; flex-direction:column; gap:8px}
+    .list-item{display:flex; align-items:center; gap:8px; padding:8px; border:1px solid var(--border); border-radius:10px; background:#fff}
+    .list-item input[type="text"]{flex:1}
+
+    .preview-wrap{display:flex; justify-content:center}
+    .canvas{width:100%; max-width:var(--maxw); border:1px dashed var(--border); border-radius:14px; overflow:hidden; background:#fff}
+
+    /* Template styles that exported pages will also include */
+    .tpl-header{display:flex; align-items:center; justify-content:space-between; gap:16px; padding:16px; border-bottom:1px solid var(--border)}
+    .tpl-brand{display:flex; align-items:center; gap:12px}
+    .tpl-logo{max-height:64px; max-width:260px; object-fit:contain}
+    .tpl-title{font-size:20px; font-weight:600}
+    .tpl-nav{display:flex; gap:14px; flex-wrap:wrap}
+    .tpl-nav a{color:var(--fg); text-decoration:none; padding:6px 8px; border-radius:8px}
+    .tpl-nav a:hover, .tpl-nav a:focus{outline:none; background:var(--panel)}
+
+    .tpl-body{padding:20px;}
+    .tpl-body .container{max-width:var(--maxw); margin-inline:auto;}
+    .tpl-body img{max-width:100%; height:auto;}
+
+    .wysiwyg{border:1px solid var(--border); border-radius:12px; padding:12px; min-height:220px; background:#fff}
+    .wysiwyg:focus{outline:2px solid var(--accent)}
+    .note{font-size:12px; color:var(--muted)}
+
+    .gallery{display:grid; grid-template-columns:repeat(3,1fr); gap:8px}
+    .gallery img{width:100%; aspect-ratio:4/3; object-fit:cover; border-radius:8px; border:1px solid var(--border); cursor:pointer}
+
+    .footer-actions{position:sticky; bottom:0; background:var(--bg); padding:12px 16px; border-top:1px solid var(--border); display:flex; justify-content:space-between; align-items:center; gap:12px}
+    .footer-actions .left, .footer-actions .right{display:flex; gap:8px; flex-wrap:wrap}
+
+    @media (max-width: 900px){
+      .app{grid-template-columns: 1fr}
+      aside{order:2}
+      main{order:1}
+    }
+  </style>
+</head>
+<body>
+  <header>
+   <a href="https://chatgpt.com/canvas/shared/68f62bd17ee881918ace36c0cfdf656f" target="_blank"> <h1>HTML Template Builder</h1> </a>
+   <p>ChatGPT dialog: <a href="https://chatgpt.com/share/68f62ba6-f840-800c-9ac4-6e90e603de1e" target="_blank">https://chatgpt.com/share/68f62ba6-f840-800c-9ac4-6e90e603de1e</a></p>
+    <div class="btn-row" role="group" aria-label="File operations">
+      <button class="btn" id="btnImportJSON" title="Import a saved project JSON">Import JSON</button>
+      <input id="importJsonInput" type="file" accept="application/json" style="display:none" />
+      <button class="btn" id="btnSaveJSON" title="Save project as JSON">Save JSON</button>
+      <button class="btn primary" id="btnExportHTML" title="Export a standalone HTML file">Export HTML</button>
+      <button class="btn" id="btnPrint" title="Print or save to PDF">Print / PDF</button>
+    </div>
+  </header>
+
+  <div class="app">
+    <aside>
+      <div class="section" id="projectSection">
+        <h2>Project</h2>
+        <div class="content">
+          <label for="siteTitle">Site Title</label>
+          <input id="siteTitle" type="text" placeholder="Example Company" />
+
+          <label for="layoutSelect" style="margin-top:10px">Layout</label>
+          <select id="layoutSelect">
+            <option value="default">Default Header</option>
+            <option value="centered">Centered Header</option>
+            <option value="stacked">Stacked Title Above Nav</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="section">
+        <h2>Logo</h2>
+        <div class="content">
+          <input id="logoInput" type="file" accept="image/*" />
+          <div class="note" style="margin-top:8px">Recommended: Transparent PNG or SVG. It will be constrained to a maximum height of 64px.</div>
+        </div>
+      </div>
+
+      <div class="section">
+        <h2>Navigation</h2>
+        <div class="content">
+          <div class="list" id="navList"></div>
+          <div class="btn-row" style="margin-top:8px">
+            <button class="btn" id="btnAddNav">Add Item</button>
+            <button class="btn" id="btnClearNav">Clear</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="section">
+        <h2>Images</h2>
+        <div class="content">
+          <input id="imgInput" type="file" accept="image/*" multiple />
+          <div class="note" style="margin:8px 0">Click an image to insert it at the cursor in the body.</div>
+          <div class="gallery" id="gallery"></div>
+        </div>
+      </div>
+
+      <div class="section">
+        <h2>Autosave</h2>
+        <div class="content">
+          <div class="btn-row">
+            <button class="btn" id="btnSaveLocal">Save to Local Storage</button>
+            <button class="btn" id="btnLoadLocal">Load from Local Storage</button>
+            <button class="btn" id="btnClearLocal">Clear Local Storage</button>
+          </div>
+          <div class="note" style="margin-top:8px">Local saves stay in this browser only.</div>
+        </div>
+      </div>
+    </aside>
+
+    <main>
+      <div class="section">
+        <h2>Body Content</h2>
+        <div class="content">
+          <div class="btn-row" style="margin-bottom:8px">
+            <button class="btn" id="btnH1">H1</button>
+            <button class="btn" id="btnH2">H2</button>
+            <button class="btn" id="btnP">Paragraph</button>
+            <button class="btn" id="btnUL">Bulleted List</button>
+            <button class="btn" id="btnQuote">Blockquote</button>
+            <button class="btn" id="btnHR">Horizontal Rule</button>
+          </div>
+          <div id="editor" class="wysiwyg" contenteditable="true" aria-label="Body editor">
+            <h1>Welcome</h1>
+            <p>This is your content area. You may type or paste content here. Use the toolbar to insert common elements. Uploaded images can be inserted at the caret position by clicking an item in the gallery.</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="section">
+        <h2>Live Preview</h2>
+        <div class="content preview-wrap">
+          <div id="preview" class="canvas" aria-label="Live preview"></div>
+        </div>
+      </div>
+
+      <div class="footer-actions">
+        <div class="left">
+          <span class="note">Everything updates live in the preview. Export generates a portable, standalone HTML file.</span>
+        </div>
+        <div class="right btn-row">
+          <button class="btn" id="btnCopyHTML">Copy HTML To Clipboard</button>
+          <button class="btn primary" id="btnExportHTML2">Export HTML</button>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <template id="navItemTemplate">
+    <div class="list-item">
+      <input type="text" class="nav-label" placeholder="Label" />
+      <input type="url" class="nav-href" placeholder="/about" />
+      <button class="btn ghost move-up" title="Move up" aria-label="Move up">▲</button>
+      <button class="btn ghost move-down" title="Move down" aria-label="Move down">▼</button>
+      <button class="btn ghost remove" title="Remove" aria-label="Remove">✕</button>
+    </div>
+  </template>
+
+  <script>
+    // Simple state model
+    const state = {
+      title: "Example Company",
+      layout: "default",
+      logoDataUrl: "",
+      nav: [
+        { label: "Home", href: "#home" },
+        { label: "Services", href: "#services" },
+        { label: "Contact", href: "#contact" },
+      ],
+      bodyHTML: "",
+      gallery: [] // array of data URLs
+    };
+
+    // Elements
+    const siteTitle = document.getElementById('siteTitle');
+    const layoutSelect = document.getElementById('layoutSelect');
+    const logoInput = document.getElementById('logoInput');
+    const navList = document.getElementById('navList');
+    const imgInput = document.getElementById('imgInput');
+    const gallery = document.getElementById('gallery');
+    const editor = document.getElementById('editor');
+    const preview = document.getElementById('preview');
+
+    const btnAddNav = document.getElementById('btnAddNav');
+    const btnClearNav = document.getElementById('btnClearNav');
+    const btnExportHTML = document.getElementById('btnExportHTML');
+    const btnExportHTML2 = document.getElementById('btnExportHTML2');
+    const btnCopyHTML = document.getElementById('btnCopyHTML');
+    const btnSaveJSON = document.getElementById('btnSaveJSON');
+    const btnImportJSON = document.getElementById('btnImportJSON');
+    const importJsonInput = document.getElementById('importJsonInput');
+    const btnPrint = document.getElementById('btnPrint');
+
+    const btnSaveLocal = document.getElementById('btnSaveLocal');
+    const btnLoadLocal = document.getElementById('btnLoadLocal');
+    const btnClearLocal = document.getElementById('btnClearLocal');
+
+    const btnH1 = document.getElementById('btnH1');
+    const btnH2 = document.getElementById('btnH2');
+    const btnP = document.getElementById('btnP');
+    const btnUL = document.getElementById('btnUL');
+    const btnQuote = document.getElementById('btnQuote');
+    const btnHR = document.getElementById('btnHR');
+
+    function init(){
+      siteTitle.value = state.title;
+      layoutSelect.value = state.layout;
+      renderNavList();
+      renderGallery();
+      updatePreview();
+    }
+
+    // Utility: file to DataURL
+    function fileToDataURL(file){
+      return new Promise((resolve,reject)=>{
+        const reader = new FileReader();
+        reader.onload = ()=> resolve(reader.result);
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+      });
+    }
+
+    // NAVIGATION BUILDER
+    function renderNavList(){
+      navList.innerHTML = '';
+      state.nav.forEach((item, idx)=>{
+        const node = document.getElementById('navItemTemplate').content.firstElementChild.cloneNode(true);
+        const labelInput = node.querySelector('.nav-label');
+        const hrefInput = node.querySelector('.nav-href');
+        labelInput.value = item.label;
+        hrefInput.value = item.href;
+        labelInput.addEventListener('input', (e)=>{ state.nav[idx].label = e.target.value; updatePreview(); });
+        hrefInput.addEventListener('input', (e)=>{ state.nav[idx].href = e.target.value; updatePreview(); });
+        node.querySelector('.remove').addEventListener('click', ()=>{ state.nav.splice(idx,1); renderNavList(); updatePreview(); });
+        node.querySelector('.move-up').addEventListener('click', ()=>{
+          if(idx>0){ const t = state.nav[idx-1]; state.nav[idx-1] = state.nav[idx]; state.nav[idx] = t; renderNavList(); updatePreview(); }
+        });
+        node.querySelector('.move-down').addEventListener('click', ()=>{
+          if(idx < state.nav.length-1){ const t = state.nav[idx+1]; state.nav[idx+1] = state.nav[idx]; state.nav[idx] = t; renderNavList(); updatePreview(); }
+        });
+        navList.appendChild(node);
+      });
+    }
+
+    btnAddNav.addEventListener('click', ()=>{ state.nav.push({label:"New", href:"#"}); renderNavList(); updatePreview(); });
+    btnClearNav.addEventListener('click', ()=>{ state.nav = []; renderNavList(); updatePreview(); });
+
+    // LOGO
+    logoInput.addEventListener('change', async (e)=>{
+      const file = e.target.files?.[0];
+      if(!file) return;
+      state.logoDataUrl = await fileToDataURL(file);
+      updatePreview();
+    });
+
+    // IMAGES GALLERY
+    imgInput.addEventListener('change', async (e)=>{
+      const files = Array.from(e.target.files || []);
+      for(const f of files){
+        const url = await fileToDataURL(f);
+        state.gallery.push(url);
+      }
+      renderGallery();
+    });
+
+    function renderGallery(){
+      gallery.innerHTML = '';
+      state.gallery.forEach((src)=>{
+        const img = new Image();
+        img.src = src;
+        img.alt = "Uploaded image";
+        img.addEventListener('click', ()=> insertImageAtCaret(src));
+        gallery.appendChild(img);
+      });
+    }
+
+    function insertImageAtCaret(src){
+      editor.focus();
+      const img = document.createElement('img');
+      img.src = src;
+      img.alt = '';
+      img.style.maxWidth = '100%';
+      const sel = window.getSelection();
+      if (!sel || sel.rangeCount === 0){ editor.appendChild(img); return; }
+      const range = sel.getRangeAt(0);
+      range.insertNode(img);
+      range.setStartAfter(img);
+      range.setEndAfter(img);
+      sel.removeAllRanges();
+      sel.addRange(range);
+      syncBody();
+      updatePreview();
+    }
+
+    // SIMPLE EDITOR COMMANDS
+    function wrap(tag){
+      const el = document.createElement(tag);
+      el.textContent = tag === 'hr' ? '' : 'Lorem ipsum dolor sit amet.';
+      if(tag === 'ul'){
+        el.innerHTML = '<li>First item</li><li>Second item</li>';
+      }
+      if(tag === 'blockquote'){
+        el.textContent = 'Quoted text.';
+      }
+      if(tag === 'hr'){
+        editor.appendChild(el);
+      } else {
+        const sel = window.getSelection();
+        if(sel && sel.rangeCount){
+          const range = sel.getRangeAt(0);
+          range.collapse(false);
+          range.insertNode(el);
+        } else {
+          editor.appendChild(el);
+        }
+      }
+      syncBody();
+      updatePreview();
+    }
+
+    btnH1.addEventListener('click', ()=>wrap('h1'));
+    btnH2.addEventListener('click', ()=>wrap('h2'));
+    btnP.addEventListener('click', ()=>wrap('p'));
+    btnUL.addEventListener('click', ()=>wrap('ul'));
+    btnQuote.addEventListener('click', ()=>wrap('blockquote'));
+    btnHR.addEventListener('click', ()=>wrap('hr'));
+
+    // MODEL BINDINGS
+    siteTitle.addEventListener('input', ()=>{ state.title = siteTitle.value; updatePreview(); });
+    layoutSelect.addEventListener('change', ()=>{ state.layout = layoutSelect.value; updatePreview(); });
+    editor.addEventListener('input', ()=>{ syncBody(); updatePreview(); });
+
+    function syncBody(){ state.bodyHTML = editor.innerHTML; }
+
+    // PREVIEW RENDER
+    function genHeader(){
+      const logoHTML = state.logoDataUrl ? `<img class="tpl-logo" src="${state.logoDataUrl}" alt="Logo">` : '';
+      const titleHTML = `<div class="tpl-title">${escapeHTML(state.title || '')}</div>`;
+      const navHTML = `<nav class="tpl-nav" aria-label="Main navigation">${state.nav.map(n=>`<a href="${escapeAttr(n.href)}">${escapeHTML(n.label)}</a>`).join('')}</nav>`;
+
+      if(state.layout === 'centered'){
+        return `<div class="tpl-header" style="flex-direction:column; text-align:center;">
+          <div class="tpl-brand" style="justify-content:center;">${logoHTML}${titleHTML}</div>
+          ${navHTML}
+        </div>`;
+      }
+      if(state.layout === 'stacked'){
+        return `<div class="tpl-header" style="flex-direction:column; align-items:flex-start;">
+          ${titleHTML}
+          <div class="tpl-brand">${logoHTML}</div>
+          ${navHTML}
+        </div>`;
+      }
+      return `<div class="tpl-header">
+        <div class="tpl-brand">${logoHTML}${titleHTML}</div>
+        ${navHTML}
+      </div>`;
+    }
+
+    function updatePreview(){
+      const header = genHeader();
+      const body = `<div class="tpl-body"><div class="container">${state.bodyHTML || ''}</div></div>`;
+      preview.innerHTML = header + body;
+      document.title = state.title ? state.title + " • Builder" : "HTML Template Builder";
+    }
+
+    // EXPORTS
+    function buildExportHTML(){
+      const css = document.querySelector('style').innerHTML;
+      const cleanCSS = css.split('/* Template styles')[1] // keep from template styles onwards
+        ? '/* Template Styles */\n' + css.split('/* Template styles')[1]
+        : css; // fallback
+      const content = `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>${escapeHTML(state.title || 'Document')}</title>
+<style>${cleanCSS}</style>
+</head>
+<body>
+${genHeader()}
+<div class="tpl-body"><div class="container">${state.bodyHTML || ''}</div></div>
+</body>
+</html>`;
+      return content;
+    }
+
+    function download(filename, data, type='text/html'){
+      const blob = new Blob([data], {type});
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = filename; document.body.appendChild(a); a.click();
+      setTimeout(()=>{ URL.revokeObjectURL(url); a.remove(); }, 0);
+    }
+
+    function saveJSON(){
+      const data = JSON.stringify(state, null, 2);
+      download(safeFileName((state.title||'project')) + '.json', data, 'application/json');
+    }
+
+    function importJSONFile(file){
+      const reader = new FileReader();
+      reader.onload = ()=>{
+        try{
+          const obj = JSON.parse(String(reader.result));
+          if(!obj || typeof obj !== 'object') throw new Error('Invalid JSON');
+          Object.assign(state, obj);
+          siteTitle.value = state.title || '';
+          layoutSelect.value = state.layout || 'default';
+          editor.innerHTML = state.bodyHTML || '';
+          renderNavList();
+          renderGallery();
+          updatePreview();
+        }catch(err){
+          alert('Could not import JSON: ' + err.message);
+        }
+      };
+      reader.readAsText(file);
+    }
+
+    function copyHTMLToClipboard(){
+      const html = buildExportHTML();
+      navigator.clipboard?.writeText(html).then(()=>{
+        alert('HTML copied to clipboard.');
+      }).catch(()=>{
+        alert('Clipboard write failed. The browser may not allow it in this context.');
+      });
+    }
+
+    function safeFileName(name){
+      return name.toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-+|-+$/g,'').slice(0,60) || 'document';
+    }
+
+    function escapeHTML(str){
+      return (str||'').replace(/[&<>\"]/g, s=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;"}[s]));
+    }
+    function escapeAttr(str){
+      return (str||'').replace(/["']/g, s=> s === '"' ? '&quot;' : '&#39;');
+    }
+
+    // Local storage helpers
+    const LS_KEY = 'html_template_builder_project_v1';
+    function saveLocal(){ localStorage.setItem(LS_KEY, JSON.stringify(state)); alert('Saved to local storage.'); }
+    function loadLocal(){ const raw = localStorage.getItem(LS_KEY); if(!raw){ alert('Nothing saved.'); return; } try{ const obj = JSON.parse(raw); Object.assign(state, obj); siteTitle.value = state.title||''; layoutSelect.value = state.layout||'default'; editor.innerHTML = state.bodyHTML||''; renderNavList(); renderGallery(); updatePreview(); }catch(e){ alert('Could not load local data.'); } }
+    function clearLocal(){ localStorage.removeItem(LS_KEY); alert('Local storage cleared.'); }
+
+    // Event bindings
+    btnExportHTML.addEventListener('click', ()=>{ const html = buildExportHTML(); download(safeFileName(state.title||'document') + '.html', html); });
+    btnExportHTML2.addEventListener('click', ()=>{ const html = buildExportHTML(); download(safeFileName(state.title||'document') + '.html', html); });
+    btnCopyHTML.addEventListener('click', copyHTMLToClipboard);
+    btnSaveJSON.addEventListener('click', saveJSON);
+    btnImportJSON.addEventListener('click', ()=> importJsonInput.click());
+    importJsonInput.addEventListener('change', (e)=>{ const f=e.target.files?.[0]; if(f) importJSONFile(f); e.target.value=''; });
+    btnPrint.addEventListener('click', ()=> window.print());
+
+    btnSaveLocal.addEventListener('click', saveLocal);
+    btnLoadLocal.addEventListener('click', loadLocal);
+    btnClearLocal.addEventListener('click', clearLocal);
+
+    // Autosave every 10 seconds
+    setInterval(()=>{ try{ localStorage.setItem(LS_KEY, JSON.stringify(state)); }catch(_){} }, 10000);
+
+    // Initialize editor content into state
+    syncBody();
+    init();
+  </script>
+<section id="html-template-builder-notes" style="font-family: system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Inter, Arial, sans-serif; color:#111; background:#fff; border:1px solid #e5e7eb; border-radius:12px; padding:16px; max-width:900px; margin:24px auto;">
+  <header style="margin-bottom:12px;">
+    <h2 style="margin:0; font-size:1.25rem;">HTML Template Builder — Drop-in Notes</h2>
+    <p style="margin:6px 0 0; color:#555;">Single-file, offline builder with logo upload, text navigation, rich text body, image gallery, live preview, and export to standalone HTML/JSON.</p>
+  </header>
+
+  <div style="display:grid; gap:16px;">
+    <article style="border:1px solid #e5e7eb; border-radius:10px; padding:12px;">
+      <h3 style="margin:0 0 8px; font-size:1.1rem;">How to Use</h3>
+      <ol style="margin:0; padding-left:18px; line-height:1.55;">
+        <li><strong>Set project basics:</strong> Enter a site title and choose a header layout.</li>
+        <li><strong>Upload a logo:</strong> PNG/SVG recommended; automatically constrained for consistent sizing.</li>
+        <li><strong>Build the menu:</strong> Add items, edit labels/links, and reorder with the up/down controls.</li>
+        <li><strong>Add content:</strong> Type in the editor or use quick-insert (H1, H2, paragraph, list, quote, rule).</li>
+        <li><strong>Insert images:</strong> Upload to the gallery, then click an image to insert it at the caret.</li>
+        <li><strong>Preview:</strong> Live preview updates as you type; no external dependencies.</li>
+        <li><strong>Save/Export:</strong> Save JSON (for later editing), copy HTML to clipboard, export standalone HTML, or print/PDF.</li>
+        <li><strong>Autosave:</strong> Uses Local Storage (browser-local only) with manual save/load/clear controls.</li>
+      </ol>
+    </article>
+
+    <article style="border:1px solid #e5e7eb; border-radius:10px; padding:12px;">
+      <h3 style="margin:0 0 8px; font-size:1.1rem;">Implementation Notes</h3>
+      <ul style="margin:0; padding-left:18px; line-height:1.55;">
+        <li><strong>State model:</strong> Title, layout, navigation array, body HTML, and gallery (data URLs).</li>
+        <li><strong>Editor:</strong> <code>contenteditable</code> div with simple element insertion and caret-based image placement.</li>
+        <li><strong>Images:</strong> Read via <code>FileReader</code> as data URLs; inserted directly into the body.</li>
+        <li><strong>Persistence:</strong> <code>localStorage</code> key for autosave; JSON import/export for portability.</li>
+        <li><strong>Export:</strong> Generates a self-contained HTML file with inline CSS and your current content/layout.</li>
+        <li><strong>Accessibility:</strong> Labels, ARIA roles, and keyboard-reachable controls for core operations.</li>
+      </ul>
+    </article>
+
+    <article style="border:1px solid #e5e7eb; border-radius:10px; padding:12px;">
+      <h3 style="margin:0 0 8px; font-size:1.1rem;">Sources (APA)</h3>
+      <ol style="margin:0; padding-left:18px; line-height:1.6;">
+        <li>Mozilla. (n.d.). <em>Contenteditable</em>. MDN Web Docs. Retrieved October 20, 2025, from https://developer.mozilla.org/en-US/docs/Web/HTML/Global_attributes/contenteditable</li>
+        <li>Mozilla. (n.d.). <em>Window.localStorage</em>. MDN Web Docs. Retrieved October 20, 2025, from https://developer.mozilla.org/en-US/docs/Web/API/Window/localStorage</li>
+        <li>Mozilla. (n.d.). <em>FileReader</em>. MDN Web Docs. Retrieved October 20, 2025, from https://developer.mozilla.org/en-US/docs/Web/API/FileReader</li>
+        <li>Mozilla. (n.d.). <em>Blob</em>. MDN Web Docs. Retrieved October 20, 2025, from https://developer.mozilla.org/en-US/docs/Web/API/Blob</li>
+        <li>Mozilla. (n.d.). <em>Data URLs</em>. MDN Web Docs. Retrieved October 20, 2025, from https://developer.mozilla.org/en-US/docs/Web/HTTP/Basics_of_HTTP/Data_URLs</li>
+        <li>Mozilla. (n.d.). <em>Clipboard API</em>. MDN Web Docs. Retrieved October 20, 2025, from https://developer.mozilla.org/en-US/docs/Web/API/Clipboard_API</li>
+        <li>WHATWG. (2025). <em>HTML Living Standard</em>. Retrieved October 20, 2025, from https://html.spec.whatwg.org/</li>
+        <li>W3C WAI-ARIA Working Group. (2024). <em>Accessible Rich Internet Applications (WAI-ARIA) 1.2</em>. W3C Recommendation. Retrieved October 20, 2025, from https://www.w3.org/TR/wai-aria-1.2/</li>
+        <li>W3C. (2018). <em>CSS Paged Media Module Level 3</em>. W3C Working Draft. Retrieved October 20, 2025, from https://www.w3.org/TR/css-page-3/</li>
+        <li>Mozilla. (n.d.). <em>URL.createObjectURL()</em>. MDN Web Docs. Retrieved October 20, 2025, from https://developer.mozilla.org/en-US/docs/Web/API/URL/createObjectURL</li>
+      </ol>
+    </article>
+  </div>
+</section>
+</body>
+</html>
