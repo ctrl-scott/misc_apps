@@ -1,0 +1,397 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>PixiJS Arrow Sprite Animator + Texture Modes</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <!-- PixiJS v8 CDN (works offline if you vendor it locally) -->
+  <script src="https://unpkg.com/pixi.js@8.4.1/dist/pixi.min.js"></script>
+  <style>
+    :root { font-family: system-ui, Segoe UI, Roboto, Helvetica, Arial, sans-serif; }
+    body { margin: 0; background: #ffffff; color: #111; }
+    header { padding: 1rem 1.25rem; border-bottom: 1px solid #e6e6e6; }
+    main { display: grid; gap: 1rem; grid-template-columns: 360px 1fr; padding: 1rem; }
+    fieldset { border: 1px solid #e6e6e6; border-radius: 10px; padding: .75rem 1rem; }
+    legend { padding: 0 .3rem; }
+    .row { display: grid; grid-template-columns: 1fr 1fr; gap: .6rem .8rem; align-items: center; }
+    label { font-size: .92rem; color: #333; }
+    input[type="number"], input[type="range"], select { width: 100%; }
+    .controls { display: flex; gap: .5rem; flex-wrap: wrap; margin-top: .5rem; }
+    button { padding: .45rem .8rem; border: 1px solid #aaa; background:#f6f6f6; border-radius: 6px; cursor: pointer; }
+    button:active { transform: translateY(1px); }
+    #stageWrap { display:flex; justify-content:center; align-items:flex-start; }
+    #stage { border: 1px solid #eee; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,.06); max-width: 95vw; }
+    .small { font-size: .84rem; color:#666; }
+  </style>
+</head>
+<body>
+<header>
+  <h2>PixiJS Arrow Sprite Animator + Texture Fill/Overlay/Tint</h2>
+  <div class="small">Load your 2-row arrow sheet and an optional texture. Adjust playback, scale, and texture mode. Background whites are removed via a configurable threshold.</div>
+</header>
+
+<main>
+  <section>
+    <fieldset>
+      <legend>Assets</legend>
+      <div class="row">
+        <label>Sprite sheet (PNG)</label>
+        <input id="spriteFile" type="file" accept="image/*" />
+        <label>Texture (optional)</label>
+        <input id="texFile" type="file" accept="image/*" />
+      </div>
+      <div class="small" style="margin-top:.5rem">
+        Your sheet appears to be <b>Rows = 2</b> and <b>Cols ≈ 7</b>. Adjust below if needed.
+      </div>
+    </fieldset>
+
+    <fieldset>
+      <legend>Layout & Playback</legend>
+      <div class="row">
+        <label for="rows">Rows</label>
+        <input id="rows" type="number" min="1" step="1" value="2" />
+        <label for="cols">Cols</label>
+        <input id="cols" type="number" min="1" step="1" value="7" />
+
+        <label for="fps">FPS <span id="fpsVal">12</span></label>
+        <input id="fps" type="range" min="1" max="60" value="12" step="1" />
+
+        <label for="scale">Scale (×)</label>
+        <input id="scale" type="number" min="0.1" step="0.1" value="1.0" />
+
+        <label for="loop">Loop</label>
+        <input id="loop" type="checkbox" checked />
+        <label for="swing">Ping-Pong</label>
+        <input id="swing" type="checkbox" />
+      </div>
+      <div class="controls">
+        <button id="playBtn">Play</button>
+        <button id="pauseBtn">Pause</button>
+        <button id="stepBtn">Step</button>
+        <button id="exportBtn">Export current frame (PNG)</button>
+      </div>
+    </fieldset>
+
+    <fieldset>
+      <legend>Texture Mode</legend>
+      <div class="row">
+        <label for="textureMode">Mode</label>
+        <select id="textureMode">
+          <option value="none">None (original black)</option>
+          <option value="fill">Fill with texture (masked)</option>
+          <option value="overlay">Overlay texture × Multiply (masked)</option>
+          <option value="tint">Tint color only</option>
+        </select>
+
+        <label for="tint">Tint (hex)</label>
+        <input id="tint" type="color" value="#111111" />
+
+        <label for="thresh">White → Transparent threshold</label>
+        <input id="thresh" type="range" min="200" max="255" value="246" />
+        <div class="small">Increase if you see faint white halos around the shapes.</div>
+      </div>
+    </fieldset>
+  </section>
+
+  <section id="stageWrap">
+    <div id="stage"></div>
+  </section>
+</main>
+
+<script>
+(function () {
+  // ------- UI elements -------
+  const el = (id) => document.getElementById(id);
+  const spriteInput  = el('spriteFile');
+  const texInput     = el('texFile');
+  const rowsInput    = el('rows');
+  const colsInput    = el('cols');
+  const fpsInput     = el('fps');
+  const fpsVal       = el('fpsVal');
+  const scaleInput   = el('scale');
+  const loopInput    = el('loop');
+  const swingInput   = el('swing');
+  const playBtn      = el('playBtn');
+  const pauseBtn     = el('pauseBtn');
+  const stepBtn      = el('stepBtn');
+  const exportBtn    = el('exportBtn');
+  const modeSelect   = el('textureMode');
+  const tintInput    = el('tint');
+  const threshInput  = el('thresh');
+
+  // ------- PixiJS app -------
+  const app = new PIXI.Application();
+  const stageDiv = document.getElementById('stage');
+  stageDiv.appendChild(app.view);
+  app.view.style.maxWidth = '900px';
+  app.view.style.width = 'min(95vw, 900px)';
+
+  // ------- Scene graph -------
+  const root = new PIXI.Container();
+  app.stage.addChild(root);
+
+  // Containers for layering
+  const baseLayer = new PIXI.Container();   // original arrow
+  const fillLayer = new PIXI.Container();   // texture fill under mask
+  const overlayLayer = new PIXI.Container();// texture overlay with multiply
+  root.addChild(fillLayer, baseLayer, overlayLayer);
+
+  // Objects that change per frame
+  let arrowAnim = null;        // AnimatedSprite of the arrow frames
+  let maskSprite = null;       // clone used as a mask (alpha)
+  let tilingFill = null;       // TilingSprite for fill
+  let tilingOverlay = null;    // TilingSprite for overlay
+  let overlayMask = null;
+
+  // ------- Assets -------
+  let sheetImage = null;       // original <img>
+  let processedCanvas = null;  // white->alpha canvas
+  let baseTexture = null;      // Pixi BaseTexture from processed canvas
+  let frameTextures = [];      // per-frame subtextures
+
+  let textureImage = null;     // optional texture <img>
+  let texturePixi = null;      // PIXI.Texture from texture image
+
+  // ------- Playback state -------
+  let playing = false;
+  let pingPong = false;
+  let forward = true;
+  let totalFrames = 0;
+  let lastTick = 0;
+  let acc = 0;
+
+  // ------- Helpers -------
+  function readImageFromFile(file) {
+    return new Promise((resolve, reject) => {
+      const url = URL.createObjectURL(file);
+      const img = new Image();
+      img.onload = () => { URL.revokeObjectURL(url); resolve(img); };
+      img.onerror = reject;
+      img.src = url;
+    });
+  }
+
+  function whiteToAlphaCanvas(img, threshold) {
+    const c = document.createElement('canvas');
+    c.width = img.naturalWidth;
+    c.height = img.naturalHeight;
+    const cx = c.getContext('2d');
+    cx.drawImage(img, 0, 0);
+    const data = cx.getImageData(0, 0, c.width, c.height);
+    const d = data.data;
+    const t = Math.max(200, Math.min(255, threshold|0));
+    for (let i = 0; i < d.length; i += 4) {
+      const r = d[i], g = d[i+1], b = d[i+2];
+      if (r >= t && g >= t && b >= t) {
+        d[i+3] = 0;
+      } else {
+        d[i+3] = 255;
+      }
+    }
+    cx.putImageData(data, 0, 0);
+    return c;
+  }
+
+  function buildFrameTextures(rows, cols) {
+    frameTextures.forEach(tx => tx.destroy(true));
+    frameTextures = [];
+
+    const fw = Math.floor(processedCanvas.width / cols);
+    const fh = Math.floor(processedCanvas.height / rows);
+
+    // Resize the renderer view to frame size × scale
+    const scale = Math.max(0.1, parseFloat(scaleInput.value || 1));
+    app.renderer.resize(Math.max(1, Math.round(fw * scale)),
+                        Math.max(1, Math.round(fh * scale)));
+    root.scale.set(scale);
+
+    for (let r = 0; r < rows; r++) {
+      for (let c = 0; c < cols; c++) {
+        const rect = new PIXI.Rectangle(c * fw, r * fh, fw, fh);
+        frameTextures.push(new PIXI.Texture({ baseTexture, frame: rect }));
+      }
+    }
+    totalFrames = frameTextures.length;
+  }
+
+  function rebuildAnimatedSprite() {
+    if (arrowAnim) { arrowAnim.destroy({children:true}); arrowAnim = null; }
+    arrowAnim = new PIXI.AnimatedSprite(frameTextures);
+    arrowAnim.anchor.set(0,0);
+    arrowAnim.loop = loopInput.checked && !swingInput.checked;
+    arrowAnim.animationSpeed = Math.max(1, parseInt(fpsInput.value||12,10)) / 60;
+    arrowAnim.tint = 0x111111; // default
+    baseLayer.removeChildren();
+    baseLayer.addChild(arrowAnim);
+
+    // Mask sprite for texture modes
+    if (maskSprite) { maskSprite.destroy(); }
+    maskSprite = new PIXI.AnimatedSprite(frameTextures);
+    maskSprite.animationSpeed = arrowAnim.animationSpeed;
+    maskSprite.loop = arrowAnim.loop;
+
+    // Fill layer
+    fillLayer.removeChildren();
+    if (tilingFill) { tilingFill.destroy(); tilingFill = null; }
+    if (texturePixi && modeSelect.value === 'fill') {
+      const fw = frameTextures[0].frame.width;
+      const fh = frameTextures[0].frame.height;
+      tilingFill = new PIXI.TilingSprite({ texture: texturePixi, width: fw, height: fh });
+      tilingFill.tileScale.set(1,1);
+      fillLayer.addChild(tilingFill);
+      fillLayer.mask = maskSprite;
+      root.addChild(maskSprite); // mask target must be on stage
+    } else {
+      fillLayer.mask = null;
+    }
+
+    // Overlay layer
+    overlayLayer.removeChildren();
+    if (tilingOverlay) { tilingOverlay.destroy(); tilingOverlay = null; }
+    if (texturePixi && modeSelect.value === 'overlay') {
+      const fw = frameTextures[0].frame.width;
+      const fh = frameTextures[0].frame.height;
+      tilingOverlay = new PIXI.TilingSprite({ texture: texturePixi, width: fw, height: fh });
+      tilingOverlay.blendMode = PIXI.BLEND_MODES.MULTIPLY;
+      overlayLayer.addChild(tilingOverlay);
+      overlayMask = new PIXI.AnimatedSprite(frameTextures);
+      overlayMask.animationSpeed = arrowAnim.animationSpeed;
+      overlayMask.loop = arrowAnim.loop;
+      overlayLayer.mask = overlayMask;
+      root.addChild(overlayMask);
+    } else {
+      overlayLayer.mask = null;
+    }
+
+    // Tint mode color
+    if (modeSelect.value === 'tint') {
+      arrowAnim.tint = parseInt(tintInput.value.replace('#','0x'), 16);
+    } else {
+      arrowAnim.tint = 0x111111;
+    }
+
+    // Ensure initial frame is in sync
+    setFrame(currentFrame);
+  }
+
+  function setFrame(idx) {
+    idx = Math.max(0, Math.min(totalFrames - 1, idx|0));
+    currentFrame = idx;
+    if (arrowAnim) arrowAnim.gotoAndStop(idx);
+    if (maskSprite) maskSprite.gotoAndStop(idx);
+    if (overlayMask) overlayMask.gotoAndStop(idx);
+  }
+
+  function updateAnimationSpeed() {
+    const fps = Math.max(1, parseInt(fpsInput.value||12,10));
+    const speed = fps / 60;
+    if (arrowAnim) arrowAnim.animationSpeed = speed;
+    if (maskSprite) maskSprite.animationSpeed = speed;
+    if (overlayMask) overlayMask.animationSpeed = speed;
+  }
+
+  // ------- Timing loop (manual for ping-pong) -------
+  let currentFrame = 0;
+  app.ticker.add((deltaMS) => {
+    // deltaMS is a multiplier relative to a 60 FPS clock
+    if (!playing || totalFrames === 0) return;
+    const fps = Math.max(1, parseInt(fpsInput.value||12,10));
+    acc += app.ticker.elapsedMS / 1000; // seconds
+    const spf = 1 / fps;
+    while (acc >= spf) {
+      acc -= spf;
+      if (!swingInput.checked) {
+        // Normal looping or stop at last
+        currentFrame++;
+        if (currentFrame >= totalFrames) {
+          if (loopInput.checked) currentFrame = 0;
+          else { currentFrame = totalFrames - 1; playing = false; }
+        }
+      } else {
+        // Ping-pong
+        if (forward) {
+          currentFrame++;
+          if (currentFrame >= totalFrames - 1) forward = false;
+        } else {
+          currentFrame--;
+          if (currentFrame <= 0) forward = true;
+        }
+      }
+      setFrame(currentFrame);
+    }
+  });
+
+  // ------- UI wiring -------
+  fpsInput.addEventListener('input', () => { el('fpsVal').textContent = String(fpsInput.value); updateAnimationSpeed(); });
+
+  rowsInput.addEventListener('change', rebuildAll);
+  colsInput.addEventListener('change', rebuildAll);
+  scaleInput.addEventListener('change', rebuildAll);
+  loopInput.addEventListener('change', () => { rebuildAnimatedSprite(); });
+  swingInput.addEventListener('change', () => { rebuildAnimatedSprite(); });
+
+  modeSelect.addEventListener('change', () => { rebuildAnimatedSprite(); });
+  tintInput.addEventListener('input', () => { if (modeSelect.value === 'tint' && arrowAnim) arrowAnim.tint = parseInt(tintInput.value.replace('#','0x'),16); });
+  threshInput.addEventListener('input', async () => {
+    if (!sheetImage) return;
+    processedCanvas = whiteToAlphaCanvas(sheetImage, parseInt(threshInput.value||246,10));
+    baseTexture = PIXI.BaseTexture.from(processedCanvas);
+    rebuildAll();
+  });
+
+  playBtn.addEventListener('click', () => { playing = true; });
+  pauseBtn.addEventListener('click', () => { playing = false; });
+  stepBtn.addEventListener('click', () => {
+    // Advance one frame respecting ping-pong direction
+    if (!swingInput.checked) {
+      currentFrame = (currentFrame + 1) % Math.max(1,totalFrames);
+    } else {
+      if (forward) {
+        currentFrame++;
+        if (currentFrame >= totalFrames - 1) forward = false;
+      } else {
+        currentFrame--;
+        if (currentFrame <= 0) forward = true;
+      }
+    }
+    setFrame(currentFrame);
+  });
+
+  exportBtn.addEventListener('click', () => {
+    // Export the current composited stage as PNG
+    const url = app.renderer.extract.canvas(app.stage).toDataURL('image/png');
+    const a = document.createElement('a');
+    a.href = url; a.download = 'frame.png';
+    document.body.appendChild(a); a.click(); a.remove();
+  });
+
+  spriteInput.addEventListener('change', async (e) => {
+    if (!e.target.files?.length) return;
+    sheetImage = await readImageFromFile(e.target.files[0]);
+    processedCanvas = whiteToAlphaCanvas(sheetImage, parseInt(threshInput.value||246,10));
+    baseTexture = PIXI.BaseTexture.from(processedCanvas);
+    rebuildAll();
+  });
+
+  texInput.addEventListener('change', async (e) => {
+    if (!e.target.files?.length) { textureImage = null; texturePixi = null; rebuildAnimatedSprite(); return; }
+    textureImage = await readImageFromFile(e.target.files[0]);
+    texturePixi = PIXI.Texture.from(textureImage);
+    rebuildAnimatedSprite();
+  });
+
+  function rebuildAll() {
+    if (!baseTexture) return;
+    const rows = Math.max(1, parseInt(rowsInput.value||1,10));
+    const cols = Math.max(1, parseInt(colsInput.value||1,10));
+    buildFrameTextures(rows, cols);
+    rebuildAnimatedSprite();
+    setFrame(0);
+  }
+
+  // Initial canvas size to something sensible
+  app.renderer.resize(700, 300);
+})();
+</script>
+</body>
+</html>

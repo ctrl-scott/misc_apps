@@ -1,0 +1,335 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Arrow Sprite Animator + Texture Fill</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    :root { font-family: system-ui, Segoe UI, Roboto, Helvetica, Arial, sans-serif; }
+    body { margin: 0; background: #fff; color: #111; }
+    header { padding: 1rem 1.25rem; border-bottom: 1px solid #ddd; }
+    main { display: grid; gap: 1rem; grid-template-columns: 320px 1fr; padding: 1rem; }
+    fieldset { border: 1px solid #ddd; border-radius: 8px; padding: .75rem 1rem; }
+    .row { display: grid; grid-template-columns: 1fr 1fr; gap: .5rem .75rem; align-items: center; }
+    label { font-size: .9rem; color: #333; }
+    input[type="number"], input[type="range"] { width: 100%; }
+    .controls { display: flex; gap: .5rem; flex-wrap: wrap; margin-top: .5rem; }
+    button { padding: .45rem .8rem; border: 1px solid #aaa; background:#f6f6f6; border-radius: 6px; cursor: pointer; }
+    button:active { transform: translateY(1px); }
+    canvas { background: #fff; width: clamp(240px, 85%, 900px); height: auto; border: 1px solid #eee; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,.06); }
+    .hint { font-size: .85rem; color:#666; }
+    .small { font-size: .8rem; color:#555; }
+  </style>
+</head>
+<body>
+<header>
+  <h2>Arrow Sprite Animator + Texture Fill (HTML5 Canvas)</h2>
+  <div class="hint">Load your sprite sheet (the image with 2 rows of frames you posted), then optionally load a texture (paper/stone/metal) to fill the arrows.</div>
+</header>
+
+<main>
+  <section>
+    <fieldset>
+      <legend>Assets</legend>
+      <div class="row">
+        <label>Sprite sheet (PNG):</label>
+        <input id="spriteFile" type="file" accept="image/*">
+        <label>Texture (optional):</label>
+        <input id="texFile" type="file" accept="image/*">
+      </div>
+      <div class="small" style="margin-top:.5rem">
+        Tip: Your sheet looks like <b>Rows=2</b> and <b>Cols≈7</b>. Adjust below if needed.
+      </div>
+    </fieldset>
+
+    <fieldset>
+      <legend>Layout & Playback</legend>
+      <div class="row">
+        <label for="rows">Rows</label>
+        <input id="rows" type="number" min="1" step="1" value="2">
+        <label for="cols">Cols</label>
+        <input id="cols" type="number" min="1" step="1" value="7">
+
+        <label for="fps">FPS <span id="fpsVal">12</span></label>
+        <input id="fps" type="range" min="1" max="60" value="12" step="1">
+
+        <label for="scale">Scale (×)</label>
+        <input id="scale" type="number" min="0.1" step="0.1" value="1.0">
+
+        <label for="loop">Loop</label>
+        <input id="loop" type="checkbox" checked>
+
+        <label for="swing">Ping-Pong</label>
+        <input id="swing" type="checkbox">
+      </div>
+
+      <div class="controls">
+        <button id="playBtn">▶︎ Play</button>
+        <button id="pauseBtn">⏸ Pause</button>
+        <button id="stepBtn">⟲ Step</button>
+        <button id="downloadBtn">Export current frame (PNG)</button>
+      </div>
+    </fieldset>
+
+    <fieldset>
+      <legend>Texture Mode</legend>
+      <div class="row">
+        <label for="textureMode">Mode</label>
+        <select id="textureMode">
+          <option value="none">No texture (original black)</option>
+          <option value="fill">Fill arrows with texture</option>
+          <option value="overlay">Overlay texture (multiply)</option>
+          <option value="tint">Tint color (no texture)</option>
+        </select>
+
+        <label for="tint">Tint (hex)</label>
+        <input id="tint" type="color" value="#111111">
+
+        <label for="thresh">White→Transparent threshold</label>
+        <input id="thresh" type="range" min="200" max="255" value="246" />
+        <div class="small">Increase if white halos appear around the shapes.</div>
+      </div>
+    </fieldset>
+  </section>
+
+  <section style="display:flex; justify-content:center; align-items:flex-start;">
+    <canvas id="stage" width="700" height="300"></canvas>
+  </section>
+</main>
+
+<script>
+(function () {
+  // --- Elements ---
+  const spriteInput = document.getElementById('spriteFile');
+  const texInput    = document.getElementById('texFile');
+  const rowsInput   = document.getElementById('rows');
+  const colsInput   = document.getElementById('cols');
+  const fpsInput    = document.getElementById('fps');
+  const fpsVal      = document.getElementById('fpsVal');
+  const scaleInput  = document.getElementById('scale');
+  const loopInput   = document.getElementById('loop');
+  const swingInput  = document.getElementById('swing');
+  const playBtn     = document.getElementById('playBtn');
+  const pauseBtn    = document.getElementById('pauseBtn');
+  const stepBtn     = document.getElementById('stepBtn');
+  const downloadBtn = document.getElementById('downloadBtn');
+  const textureMode = document.getElementById('textureMode');
+  const tintInput   = document.getElementById('tint');
+  const threshInput = document.getElementById('thresh');
+
+  const canvas = document.getElementById('stage');
+  const ctx    = canvas.getContext('2d');
+
+  // --- State ---
+  let sheetImg = null;          // original sprite sheet
+  let sheetMasked = null;       // processed sheet (white -> transparent)
+  let texImg   = null;          // optional texture
+  let texPattern = null;
+
+  let frame = 0;
+  let forward = true;
+  let running = false;
+  let lastTime = 0;
+  let acc = 0;
+
+  const loadImageFromFile = (file) =>
+    new Promise((resolve, reject) => {
+      const url = URL.createObjectURL(file);
+      const img = new Image();
+      img.onload = () => { URL.revokeObjectURL(url); resolve(img); };
+      img.onerror = reject;
+      img.src = url;
+    });
+
+  function updateFPSLabel(){ fpsVal.textContent = String(fpsInput.value); }
+  updateFPSLabel();
+  fpsInput.addEventListener('input', updateFPSLabel);
+
+  // Convert the sheet so that near-white pixels become fully transparent.
+  function makeTransparentSheet(img, threshold = 246) {
+    const off = document.createElement('canvas');
+    off.width = img.naturalWidth;
+    off.height = img.naturalHeight;
+    const octx = off.getContext('2d');
+    octx.drawImage(img, 0, 0);
+
+    const imgData = octx.getImageData(0, 0, off.width, off.height);
+    const d = imgData.data;
+    for (let i = 0; i < d.length; i += 4) {
+      const r = d[i], g = d[i+1], b = d[i+2];
+      // Treat very light pixels as background -> alpha = 0
+      if (r >= threshold && g >= threshold && b >= threshold) {
+        d[i+3] = 0;
+      } else {
+        // Keep original (opaque black) but normalize alpha to 255
+        d[i+3] = 255;
+      }
+    }
+    octx.putImageData(imgData, 0, 0);
+    return off;
+  }
+
+  // --- Rendering ---
+  function draw(time) {
+    if (!sheetMasked) { requestAnimationFrame(draw); return; }
+
+    const rows = Math.max(1, parseInt(rowsInput.value || 1, 10));
+    const cols = Math.max(1, parseInt(colsInput.value || 1, 10));
+    const totalFrames = rows * cols;
+
+    const fps = Math.max(1, parseInt(fpsInput.value || 12, 10));
+    const scale = Math.max(0.1, parseFloat(scaleInput.value || 1.0));
+    const thresh = Math.max(200, Math.min(255, parseInt(threshInput.value || 246, 10)));
+
+    // If threshold changed since last process and we have the original, rebuild.
+    if (sheetImg && (sheetMasked._thresh !== thresh)) {
+      sheetMasked = makeTransparentSheet(sheetImg, thresh);
+      sheetMasked._thresh = thresh;
+    }
+
+    const fw = sheetMasked.width / cols;
+    const fh = sheetMasked.height / rows;
+
+    // resize canvas to current scaled frame size (keeping CSS size responsive)
+    const desiredW = Math.round(fw * scale);
+    const desiredH = Math.round(fh * scale);
+    if (canvas.width !== desiredW || canvas.height !== desiredH) {
+      canvas.width = desiredW; canvas.height = desiredH;
+    }
+
+    // advance animation timing
+    const dt = (time - lastTime) / 1000 || 0;
+    lastTime = time;
+    if (running) {
+      acc += dt;
+      const spf = 1 / fps;
+      while (acc >= spf) {
+        acc -= spf;
+        stepFrame(totalFrames);
+      }
+    }
+
+    // compute frame rect
+    const col = frame % cols;
+    const row = Math.floor(frame / cols);
+    const sx = Math.round(col * fw);
+    const sy = Math.round(row * fh);
+
+    // clear
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    const mode = textureMode.value;
+
+    if (mode === 'none') {
+      // Just draw the masked sprite (black on transparent)
+      ctx.imageSmoothingEnabled = false;
+      ctx.drawImage(sheetMasked, sx, sy, fw, fh, 0, 0, desiredW, desiredH);
+
+    } else if (mode === 'tint') {
+      // Fill with a solid tint, clipped by sprite alpha
+      // 1) draw sprite to get alpha
+      const off = getFrameOffscreen(sheetMasked, sx, sy, fw, fh);
+      // 2) paint tint under mask
+      ctx.save();
+      ctx.drawImage(off, 0, 0, desiredW, desiredH);
+      ctx.globalCompositeOperation = 'source-in';
+      ctx.fillStyle = tintInput.value;
+      ctx.fillRect(0, 0, desiredW, desiredH);
+      ctx.restore();
+
+    } else if (mode === 'fill' && texPattern) {
+      // Fill the arrow interiors with the texture
+      const off = getFrameOffscreen(sheetMasked, sx, sy, fw, fh);
+      // Paint the texture first
+      ctx.save();
+      ctx.fillStyle = texPattern;
+      ctx.fillRect(0, 0, desiredW, desiredH);
+      // Keep only where the sprite is (alpha mask)
+      ctx.globalCompositeOperation = 'destination-in';
+      ctx.drawImage(off, 0, 0, desiredW, desiredH);
+      ctx.restore();
+
+    } else if (mode === 'overlay' && texPattern) {
+      // Draw normal sprite then overlay a texture with multiply
+      ctx.drawImage(sheetMasked, sx, sy, fw, fh, 0, 0, desiredW, desiredH);
+      ctx.save();
+      ctx.globalCompositeOperation = 'multiply';
+      ctx.fillStyle = texPattern;
+      ctx.fillRect(0, 0, desiredW, desiredH);
+      ctx.restore();
+    } else {
+      // Fallback: plain masked sprite
+      ctx.drawImage(sheetMasked, sx, sy, fw, fh, 0, 0, desiredW, desiredH);
+    }
+
+    requestAnimationFrame(draw);
+  }
+
+  function getFrameOffscreen(sheet, sx, sy, fw, fh) {
+    const off = document.createElement('canvas');
+    off.width = fw; off.height = fh;
+    const octx = off.getContext('2d');
+    octx.imageSmoothingEnabled = false;
+    octx.drawImage(sheet, sx, sy, fw, fh, 0, 0, fw, fh);
+    return off;
+  }
+
+  function stepFrame(totalFrames) {
+    const swing = swingInput.checked;
+    if (!swing) {
+      frame++;
+      if (frame >= totalFrames) {
+        if (loopInput.checked) frame = 0; else { frame = totalFrames - 1; running = false; }
+      }
+    } else {
+      if (forward) {
+        frame++;
+        if (frame >= totalFrames - 1) { forward = false; if (!loopInput.checked) running = false; }
+      } else {
+        frame--;
+        if (frame <= 0) { forward = true; if (!loopInput.checked) running = false; }
+      }
+    }
+  }
+
+  // --- Events ---
+  spriteInput.addEventListener('change', async (e) => {
+    if (!e.target.files?.length) return;
+    sheetImg = await loadImageFromFile(e.target.files[0]);
+    sheetMasked = makeTransparentSheet(sheetImg, parseInt(threshInput.value || 246, 10));
+    sheetMasked._thresh = parseInt(threshInput.value || 246, 10);
+    frame = 0; forward = true;
+  });
+
+  texInput.addEventListener('change', async (e) => {
+    if (!e.target.files?.length) { texImg = null; texPattern = null; return; }
+    texImg = await loadImageFromFile(e.target.files[0]);
+    const off = document.createElement('canvas');
+    off.width = texImg.naturalWidth;
+    off.height = texImg.naturalHeight;
+    const octx = off.getContext('2d');
+    octx.drawImage(texImg, 0, 0);
+    texPattern = ctx.createPattern(off, 'repeat');
+  });
+
+  playBtn.addEventListener('click', () => { running = true; });
+  pauseBtn.addEventListener('click', () => { running = false; });
+  stepBtn.addEventListener('click', () => {
+    const rows = Math.max(1, parseInt(rowsInput.value || 1, 10));
+    const cols = Math.max(1, parseInt(colsInput.value || 1, 10));
+    stepFrame(rows * cols);
+  });
+
+  downloadBtn.addEventListener('click', () => {
+    const url = canvas.toDataURL('image/png');
+    const a = document.createElement('a');
+    a.href = url; a.download = 'frame.png';
+    document.body.appendChild(a); a.click(); a.remove();
+  });
+
+  // Keep animation ticking
+  requestAnimationFrame(draw);
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,442 @@
+<!DOCTYPE html>
+<!-- https://chatgpt.com/share/68f94487-4fc4-800c-9c0f-f412552f22e1 -->
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Battleship-like Game — Single File</title>
+  <style>
+    :root{
+      --bg: #ffffff;
+      --fg: #111111;
+      --muted: #6b7280;
+      --accent: #0ea5e9;
+      --good: #10b981;
+      --bad: #ef4444;
+      --panel: #f5f7fb;
+      --grid: #e5e7eb;
+    }
+    html, body { height: 100%; }
+    body{
+      margin:0; font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji";
+      color: var(--fg); background: var(--bg);
+    }
+    .app{ max-width: 1100px; margin: 0 auto; padding: 24px; display: grid; gap: 24px; }
+    header h1{ margin:0 0 6px 0; font-size: 28px; letter-spacing: .2px; }
+    header p{ margin:0; color: var(--muted); }
+
+    .board-wrap{ display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
+    @media (max-width: 900px){ .board-wrap{ grid-template-columns: 1fr; } }
+
+    .panel{ background: var(--panel); border: 1px solid var(--grid); border-radius: 14px; padding: 16px; }
+    .panel h2{ margin: 0 0 8px 0; font-size: 18px; }
+
+    .controls{ display:flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+    .controls button, .controls .select-like{
+      border: 1px solid var(--grid); background: #fff; padding: 8px 12px; border-radius: 10px; cursor: pointer;
+      font-weight: 600; letter-spacing:.2px;
+    }
+    .controls button[disabled]{ opacity:.6; cursor:not-allowed; }
+
+    .legend{ display:flex; gap: 12px; align-items:center; flex-wrap:wrap; color: var(--muted); font-size: 14px; }
+    .dot{ width: 14px; height: 14px; border-radius: 3px; display:inline-block; border:1px solid var(--grid); }
+    .d-sea{ background:#fff; }
+    .d-ship{ background:#93c5fd; }
+    .d-hit{ background: var(--bad); }
+    .d-miss{ background:#cbd5e1; }
+    .d-sunk{ background:#ef4444; border-color:#ef4444; }
+
+    .boards{ display:grid; grid-template-columns: 1fr 1fr; gap: 24px; }
+    @media (max-width: 900px){ .boards{ grid-template-columns: 1fr; } }
+
+    .board{ display: grid; grid-template-columns: 30px repeat(10, 1fr); gap: 2px; user-select: none; }
+    .label{ display:flex; align-items:center; justify-content:center; color: var(--muted); font-size: 12px; }
+    .cell{
+      background:#fff; border:1px solid var(--grid); width: 34px; height: 34px; display:flex; align-items:center; justify-content:center; border-radius: 6px;
+      transition: transform 120ms ease, background 120ms ease, border-color 120ms ease;
+    }
+    .cell.btn{ cursor: pointer; }
+    .cell.btn:hover{ transform: translateY(-1px); }
+    .cell.ship{ background:#dbeafe; border-color:#bfdbfe; }
+    .cell.preview-ok{ outline: 2px solid var(--good); }
+    .cell.preview-bad{ outline: 2px solid var(--bad); }
+    .cell.hit{ background: var(--bad); color:#fff; font-weight:700; }
+    .cell.miss{ background:#e5e7eb; color:#64748b; }
+    .cell.sunk{ background:#b91c1c; color:#fff; font-weight:700; }
+
+    .side h3{ margin: 0 0 8px 0; font-size: 16px; }
+    .ships{ display:flex; flex-direction: column; gap: 6px; font-size: 14px; }
+    .ship-item{ display:flex; align-items:center; gap: 8px; }
+    .ship-box{ display:grid; grid-auto-flow: column; gap: 2px; }
+    .ship-box span{ width: 14px; height: 14px; background:#dbeafe; border:1px solid #bfdbfe; border-radius:3px; display:inline-block; }
+    .ship-item.placed{ opacity:.6; text-decoration: line-through; }
+
+    .sr-only{ position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip:rect(0,0,0,0); white-space:nowrap; border:0; }
+
+    .announcer{ min-height: 24px; }
+
+    .footer{ color: var(--muted); font-size: 13px; text-align:center; }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <header>
+      <h1>Battleship-like Game</h1>
+      <p>A single file, offline friendly, accessible implementation. Player versus Computer.</p>
+    </header>
+
+    <section class="panel">
+      <div class="controls">
+        <button id="newGameBtn" aria-label="Start a new game">New Game</button>
+        <button id="randomPlaceBtn" aria-label="Auto place my fleet">Auto Place My Fleet</button>
+        <button id="rotateBtn" aria-label="Rotate current ship (R)">Rotate (R)</button>
+        <button id="saveBtn" aria-label="Save game to local storage">Save</button>
+        <button id="loadBtn" aria-label="Load saved game">Load</button>
+        <span class="select-like" id="phaseBadge">Phase: placing</span>
+      </div>
+      <div class="legend" style="margin-top:10px;">
+        <span class="dot d-sea"></span> Sea
+        <span class="dot d-ship"></span> My ship
+        <span class="dot d-hit"></span> Hit
+        <span class="dot d-miss"></span> Miss
+        <span class="dot d-sunk"></span> Sunk
+      </div>
+    </section>
+
+    <section class="boards">
+      <div class="panel">
+        <h2>My Board</h2>
+        <div class="board" id="playerBoard" aria-label="Your grid" role="grid"></div>
+        <div class="side">
+          <h3>Fleet To Place</h3>
+          <div class="ships" id="fleetList"></div>
+        </div>
+      </div>
+      <div class="panel">
+        <h2>Computer Board</h2>
+        <div class="board" id="cpuBoard" aria-label="Opponent grid" role="grid"></div>
+        <div class="announcer" aria-live="polite" id="announcer"></div>
+      </div>
+    </section>
+
+    <div class="footer">Use the Rotate button or press the R key while placing. Click on the opponent grid to fire.</div>
+  </div>
+
+<script>
+(function(){
+  "use strict";
+
+  /** Types and constants */
+  const SIZE = 10;
+  const SHIPS = [
+    { key: "carrier", name: "Carrier", len: 5 },
+    { key: "battleship", name: "Battleship", len: 4 },
+    { key: "cruiser", name: "Cruiser", len: 3 },
+    { key: "submarine", name: "Submarine", len: 3 },
+    { key: "destroyer", name: "Destroyer", len: 2 },
+  ];
+
+  const Phase = Object.freeze({ PLACING: "placing", PLAYING: "playing", FINISHED: "finished" });
+
+  /** State */
+  let state = null;
+
+  /** Utility */
+  const letters = Array.from({length: SIZE}, (_,i) => String.fromCharCode(65+i));
+  function inside(x,y){ return x>=0 && x<SIZE && y>=0 && y<SIZE; }
+  function keyOf(x,y){ return `${x},${y}`; }
+  function parseKey(k){ const [x,y] = k.split(",").map(Number); return {x,y}; }
+
+  function emptyBoard(){
+    return {
+      ships: [], // each: { key, name, len, cells: Array<{x,y}>, hits: Set<string> }
+      shipCells: new Map(), // key: "x,y" -> shipIndex
+      shots: new Map(), // key: "x,y" -> "hit"|"miss"|"sunk"
+    };
+  }
+
+  function newGame(){
+    state = {
+      phase: Phase.PLACING,
+      orientation: "H", // H or V
+      placingIndex: 0,
+      player: emptyBoard(),
+      cpu: emptyBoard(),
+      turn: "player", // or "cpu"
+    };
+    cpuAutoPlace();
+    renderAll();
+  }
+
+  function rotate(){ state.orientation = state.orientation === "H" ? "V" : "H"; updatePhaseBadge(); }
+
+  /** Ship placement */
+  function canPlace(board, shipLen, x, y, orientation){
+    const cells = [];
+    for(let i=0;i<shipLen;i++){
+      const cx = orientation === "H" ? x+i : x;
+      const cy = orientation === "H" ? y : y+i;
+      if(!inside(cx,cy)) return { ok:false, cells:[] };
+      const k = keyOf(cx,cy);
+      if(board.shipCells.has(k)) return { ok:false, cells:[] };
+      cells.push({x:cx,y:cy});
+    }
+    // Optional: prevent touching by one cell border. For simplicity, allow touching.
+    return { ok:true, cells };
+  }
+
+  function placeShip(board, shipDef, cells){
+    const ship = { key: shipDef.key, name: shipDef.name, len: shipDef.len, cells, hits: new Set() };
+    const idx = board.ships.push(ship) - 1;
+    for(const c of cells){ board.shipCells.set(keyOf(c.x,c.y), idx); }
+  }
+
+  function tryPlaceAt(board, shipDef, x, y, orientation){
+    const res = canPlace(board, shipDef.len, x, y, orientation);
+    if(res.ok){ placeShip(board, shipDef, res.cells); return true; }
+    return false;
+  }
+
+  function randomInt(n){ return Math.floor(Math.random()*n); }
+
+  function autoPlace(board){
+    const attemptsMax = 1000;
+    for(const s of SHIPS){
+      let placed = false; let attempts = 0;
+      while(!placed && attempts < attemptsMax){
+        attempts++;
+        const ori = Math.random() < 0.5 ? "H" : "V";
+        const x = randomInt(SIZE);
+        const y = randomInt(SIZE);
+        placed = tryPlaceAt(board, s, x, y, ori);
+      }
+      if(!placed){ return false; }
+    }
+    return true;
+  }
+
+  function cpuAutoPlace(){ autoPlace(state.cpu); }
+
+  /** Shooting */
+  function isSunk(board, ship){ return ship.hits.size === ship.len; }
+  function applyShot(board, x, y){
+    const k = keyOf(x,y);
+    if(board.shots.has(k)) return null; // already shot
+    const shipIndex = board.shipCells.get(k);
+    if(shipIndex != null){
+      const ship = board.ships[shipIndex];
+      ship.hits.add(k);
+      const sunk = isSunk(board, ship);
+      board.shots.set(k, sunk ? "sunk" : "hit");
+      return { type: sunk ? "sunk" : "hit", shipName: ship.name };
+    } else {
+      board.shots.set(k, "miss");
+      return { type: "miss" };
+    }
+  }
+
+  function allSunk(board){ return board.ships.length > 0 && board.ships.every(s => isSunk(board, s)); }
+
+  /** Very basic CPU: random untargeted shooting */
+  function cpuTurn(){
+    if(state.phase !== Phase.PLAYING) return;
+    // choose random cell not shot before
+    let x,y,k; let guard=0;
+    do { x = randomInt(SIZE); y = randomInt(SIZE); k = keyOf(x,y); guard++; } while(state.player.shots.has(k) && guard < 1000);
+    const outcome = applyShot(state.player, x, y);
+    announce(`Computer fires at ${letters[y]}${x+1}: ${outcome.type.toUpperCase()}${outcome.shipName ? ` (${outcome.shipName})` : ""}.`);
+    if(allSunk(state.player)){
+      state.phase = Phase.FINISHED; announce("Computer wins. Start a new game to play again.");
+    } else {
+      state.turn = "player";
+    }
+    renderBoards();
+  }
+
+  /** DOM setup */
+  const elPlayer = document.getElementById("playerBoard");
+  const elCpu = document.getElementById("cpuBoard");
+  const elFleet = document.getElementById("fleetList");
+  const elPhase = document.getElementById("phaseBadge");
+  const elAnn = document.getElementById("announcer");
+
+  function boardHeader(){
+    const frag = document.createDocumentFragment();
+    const topLeft = document.createElement("div"); topLeft.className = "label"; frag.appendChild(topLeft);
+    for(let x=0;x<SIZE;x++){ const d=document.createElement("div"); d.className="label"; d.textContent=String(x+1); frag.appendChild(d); }
+    for(let y=0;y<SIZE;y++){
+      const rowLabel = document.createElement("div"); rowLabel.className="label"; rowLabel.textContent = letters[y]; frag.appendChild(rowLabel);
+      for(let x=0;x<SIZE;x++){
+        const c = document.createElement("div"); c.className = "cell"; c.dataset.x = String(x); c.dataset.y = String(y); frag.appendChild(c);
+      }
+    }
+    return frag;
+  }
+
+  function renderBoards(){
+    // Player board
+    elPlayer.innerHTML = ""; elPlayer.appendChild(boardHeader());
+    elPlayer.querySelectorAll('.cell').forEach(cell => {
+      const x = Number(cell.dataset.x), y = Number(cell.dataset.y); const k = keyOf(x,y);
+      // Show ships on player board
+      if(state.player.shipCells.has(k)){ cell.classList.add("ship"); }
+      const shot = state.player.shots.get(k);
+      if(shot){ cell.classList.add(shot); cell.textContent = shot === "miss" ? "·" : "✕"; }
+    });
+
+    // CPU board
+    elCpu.innerHTML = ""; elCpu.appendChild(boardHeader());
+    elCpu.querySelectorAll('.cell').forEach(cell => {
+      const x = Number(cell.dataset.x), y = Number(cell.dataset.y); const k = keyOf(x,y);
+      cell.classList.add("btn");
+      const shot = state.cpu.shots.get(k);
+      if(shot){ cell.classList.add(shot); cell.textContent = shot === "miss" ? "·" : "✕"; }
+    });
+  }
+
+  function renderFleet(){
+    elFleet.innerHTML = "";
+    SHIPS.forEach((s, idx) => {
+      const placed = !!state.player.ships.find(ss => ss.key === s.key);
+      const wrap = document.createElement("div"); wrap.className = "ship-item" + (placed?" placed":"");
+      const box = document.createElement("div"); box.className = "ship-box";
+      for(let i=0;i<s.len;i++){ const sq=document.createElement("span"); box.appendChild(sq); }
+      const name = document.createElement("span"); name.textContent = `${s.name} (${s.len})`;
+      wrap.appendChild(box); wrap.appendChild(name);
+      if(!placed && state.phase === Phase.PLACING && state.placingIndex === idx){
+        const tag = document.createElement("strong"); tag.style.marginLeft = "6px"; tag.textContent = " ← placing"; wrap.appendChild(tag);
+      }
+      elFleet.appendChild(wrap);
+    });
+  }
+
+  function renderAll(){ updatePhaseBadge(); renderBoards(); renderFleet(); announce("Place your fleet on your board or use Auto Place."); }
+  function updatePhaseBadge(){ elPhase.textContent = `Phase: ${state.phase} | Orientation: ${state.orientation}`; }
+  function announce(msg){ elAnn.textContent = msg; }
+
+  /** Interactions */
+  // Placement hover preview
+  let lastPreview = [];
+  function clearPreview(){ for(const c of lastPreview){ c.classList.remove("preview-ok","preview-bad"); } lastPreview = []; }
+
+  elPlayer.addEventListener("mousemove", (e) => {
+    if(state.phase !== Phase.PLACING) return;
+    const t = e.target; if(!(t instanceof HTMLElement)) return; if(!t.classList.contains("cell")) return;
+    clearPreview();
+    const x = Number(t.dataset.x), y = Number(t.dataset.y);
+    const shipDef = SHIPS[state.placingIndex]; if(!shipDef) return;
+    const res = canPlace(state.player, shipDef.len, x, y, state.orientation);
+    // collect cells
+    for(const c of res.cells){
+      const sel = elPlayer.querySelector(`.cell[data-x="${c.x}"][data-y="${c.y}"]`);
+      if(sel){ sel.classList.add(res.ok?"preview-ok":"preview-bad"); lastPreview.push(sel); }
+    }
+  });
+  elPlayer.addEventListener("mouseleave", clearPreview);
+
+  elPlayer.addEventListener("click", (e) => {
+    if(state.phase !== Phase.PLACING) return;
+    const t = e.target; if(!(t instanceof HTMLElement)) return; if(!t.classList.contains("cell")) return;
+    const x = Number(t.dataset.x), y = Number(t.dataset.y);
+    const shipDef = SHIPS[state.placingIndex]; if(!shipDef) return;
+    const ok = tryPlaceAt(state.player, shipDef, x, y, state.orientation);
+    clearPreview();
+    if(ok){
+      // advance
+      state.placingIndex++;
+      if(state.placingIndex >= SHIPS.length){ state.phase = Phase.PLAYING; state.turn = "player"; announce("All ships placed. Your turn. Fire on the opponent board."); }
+      renderBoards(); renderFleet(); updatePhaseBadge();
+    } else {
+      announce("Invalid placement. Try another position or rotate.");
+    }
+  });
+
+  // Shooting on CPU board
+  elCpu.addEventListener("click", (e) => {
+    if(state.phase !== Phase.PLAYING) return;
+    if(state.turn !== "player") return;
+    const t = e.target; if(!(t instanceof HTMLElement)) return; if(!t.classList.contains("cell")) return;
+    const x = Number(t.dataset.x), y = Number(t.dataset.y);
+    const k = keyOf(x,y);
+    if(state.cpu.shots.has(k)) { announce("You already fired there."); return; }
+    const outcome = applyShot(state.cpu, x, y);
+    announce(`You fire at ${letters[y]}${x+1}: ${outcome.type.toUpperCase()}${outcome.shipName ? ` (${outcome.shipName})` : ""}.`);
+    renderBoards();
+    if(allSunk(state.cpu)){
+      state.phase = Phase.FINISHED; announce("You win. Start a new game to play again."); renderBoards(); return;
+    }
+    // CPU moves next
+    state.turn = "cpu";
+    setTimeout(cpuTurn, 400);
+  });
+
+  // Global keys
+  document.addEventListener("keydown", (e) => {
+    if(e.key.toLowerCase() === "r"){ rotate(); }
+  });
+
+  // Buttons
+  document.getElementById("newGameBtn").addEventListener("click", newGame);
+  document.getElementById("randomPlaceBtn").addEventListener("click", () => {
+    if(state.phase !== Phase.PLACING) return;
+    state.player = emptyBoard();
+    autoPlace(state.player);
+    state.placingIndex = SHIPS.length;
+    state.phase = Phase.PLAYING; state.turn = "player";
+    renderAll(); announce("Fleet placed automatically. Your turn.");
+  });
+  document.getElementById("rotateBtn").addEventListener("click", rotate);
+
+  const SAVE_KEY = "bships_singlefile_v1";
+  document.getElementById("saveBtn").addEventListener("click", () => {
+    const data = JSON.stringify(serializeState());
+    localStorage.setItem(SAVE_KEY, data);
+    announce("Game saved to local storage.");
+  });
+  document.getElementById("loadBtn").addEventListener("click", () => {
+    const raw = localStorage.getItem(SAVE_KEY);
+    if(!raw){ announce("No saved game found."); return; }
+    try{ const obj = JSON.parse(raw); deserializeState(obj); renderAll(); announce("Game loaded."); } catch(err){ announce("Failed to load saved game."); }
+  });
+
+  function serializeBoard(b){
+    return {
+      ships: b.ships.map(s => ({ key:s.key, name:s.name, len:s.len, cells:s.cells, hits:Array.from(s.hits) })),
+      shipCells: Array.from(b.shipCells.entries()),
+      shots: Array.from(b.shots.entries()),
+    };
+  }
+  function deserializeBoard(o){
+    const b = emptyBoard();
+    b.ships = o.ships.map(s => ({ key:s.key, name:s.name, len:s.len, cells:s.cells, hits:new Set(s.hits) }));
+    b.shipCells = new Map(o.shipCells);
+    b.shots = new Map(o.shots);
+    return b;
+  }
+  function serializeState(){
+    return {
+      phase: state.phase,
+      orientation: state.orientation,
+      placingIndex: state.placingIndex,
+      player: serializeBoard(state.player),
+      cpu: serializeBoard(state.cpu),
+      turn: state.turn,
+    };
+  }
+  function deserializeState(obj){
+    state = {
+      phase: obj.phase,
+      orientation: obj.orientation,
+      placingIndex: obj.placingIndex,
+      player: deserializeBoard(obj.player),
+      cpu: deserializeBoard(obj.cpu),
+      turn: obj.turn,
+    };
+  }
+
+  // Initialize
+  newGame();
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Vue + PixiJS Calculator (Fixed Display)</title>
+  <style>
+    html, body {
+      height: 100%;
+      margin: 0;
+      background: #1e1e1e;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #fff;
+      font-family: Arial, sans-serif;
+    }
+    #app {
+      text-align: center;
+      width: 400px;
+    }
+    canvas {
+      border-radius: 20px;
+      box-shadow: 0 0 20px rgba(0,0,0,0.5);
+    }
+  </style>
+</head>
+<body>
+  <div id="app">
+    <h2>Vue + PixiJS Calculator</h2>
+    <div ref="pixiMount"></div>
+    <p>Use keyboard: 0–9, +, –, *, /, Enter (=), C (clear)</p>
+  </div>
+
+  <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+  <script src="https://unpkg.com/pixi.js@8/dist/pixi.min.js"></script>
+  <script>
+  const { createApp, ref, onMounted } = Vue;
+
+  createApp({
+    setup() {
+      const pixiMount = ref(null);
+      let current = "0", prev = null, op = null;
+
+      function calculate(a, b, operator) {
+        switch (operator) {
+          case '+': return a + b;
+          case '-': return a - b;
+          case '*': return a * b;
+          case '/': return b !== 0 ? a / b : 0;
+          default: return b;
+        }
+      }
+
+      onMounted(async () => {
+        const app = new PIXI.Application();
+        await app.init({ width: 360, height: 500, backgroundColor: 0x202020, antialias: true });
+        pixiMount.value.appendChild(app.canvas);
+
+        const style = new PIXI.TextStyle({ fontSize: 32, fill: 0xffffff, fontFamily: 'Arial' });
+        const display = new PIXI.Text(current, style);
+        display.x = 20;
+        display.y = 20;
+        app.stage.addChild(display);
+
+        const buttons = [
+          ['7', '8', '9', '/'],
+          ['4', '5', '6', '*'],
+          ['1', '2', '3', '-'],
+          ['0', '.', '=', '+'],
+          ['C']
+        ];
+
+        const buttonWidth = 80;
+        const buttonHeight = 60;
+        const startX = 20;
+        const startY = 100;
+        const gap = 10;
+
+        buttons.forEach((row, rowIndex) => {
+          row.forEach((label, colIndex) => {
+            const g = new PIXI.Graphics();
+            g.roundRect(0, 0, buttonWidth, buttonHeight, 10);
+            g.fill(0x333333);
+            g.x = startX + colIndex * (buttonWidth + gap);
+            g.y = startY + rowIndex * (buttonHeight + gap);
+            g.eventMode = 'static';
+            g.cursor = 'pointer';
+
+            const t = new PIXI.Text(label, { fontSize: 24, fill: 0xffffff, fontFamily: 'Arial' });
+            t.anchor.set(0.5);
+            t.x = g.x + buttonWidth / 2;
+            t.y = g.y + buttonHeight / 2;
+
+            g.on('pointertap', () => {
+              if (!isNaN(label) || label === '.') {
+                if (current === '0') current = label;
+                else current += label;
+              } else if (['+', '-', '*', '/'].includes(label)) {
+                prev = parseFloat(current);
+                current = '0';
+                op = label;
+              } else if (label === '=') {
+                if (op && prev !== null) {
+                  current = calculate(prev, parseFloat(current), op).toString();
+                  op = null; prev = null;
+                }
+              } else if (label === 'C') {
+                current = '0'; prev = null; op = null;
+              }
+              display.text = current;
+            });
+
+            app.stage.addChild(g);
+            app.stage.addChild(t);
+          });
+        });
+      });
+
+      return { pixiMount };
+    }
+  }).mount('#app');
+  </script>
+</body>
+</html>
