@@ -1,0 +1,406 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Peer-to-Peer Encrypted Messaging (Animated Demo)</title>
+<style>
+  :root {
+    --bg: #ffffff;
+    --fg: #000000;
+    --muted: #222;
+    --accent: #0a0a0a;
+    --card: #f4f4f4;
+    --line: #ababab;
+  }
+  html, body {
+    background: var(--bg);
+    color: var(--fg);
+    font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji";
+    margin: 0;
+    padding: 0;
+  }
+  header, footer {
+    max-width: 1100px;
+    margin: 24px auto 12px;
+    padding: 0 16px;
+  }
+  header h1 { margin: 0 0 8px; font-size: 1.6rem; }
+  header p { margin: 0; line-height: 1.45; }
+  main {
+    max-width: 1100px;
+    margin: 12px auto 24px;
+    padding: 0 16px;
+  }
+  .grid {
+    display: grid;
+    grid-template-columns: 1fr 260px 1fr;
+    gap: 16px;
+    align-items: start;
+  }
+  .peer {
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    padding: 16px;
+  }
+  .peer h2 {
+    margin: 0 0 8px;
+    font-size: 1.2rem;
+  }
+  .peer .kblock {
+    font: 12px/1.35 ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+    white-space: pre-wrap;
+    word-break: break-word;
+    background: #fff;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 8px;
+    max-height: 160px;
+    overflow: auto;
+  }
+  .wire {
+    position: relative;
+    height: 200px;
+    border: 1px dashed var(--line);
+    border-radius: 12px;
+    display: grid;
+    place-items: center;
+    overflow: hidden;
+    background: #fff;
+  }
+  .wire .lane {
+    position: absolute;
+    top: 50%;
+    width: 92%;
+    height: 2px;
+    background: var(--line);
+    transform: translateY(-50%);
+  }
+  .bubble {
+    position: absolute;
+    top: calc(50% - 18px);
+    width: max(240px, 32%);
+    max-width: 420px;
+    transform: translateX(0);
+    padding: 10px 12px;
+    background: #fff;
+    border: 1px solid var(--fg);
+    border-radius: 14px;
+    box-shadow: 0 1px 0 rgba(0,0,0,0.06);
+    font: 12px/1.35 ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+    opacity: 0;
+  }
+  .bubble small { display: block; color: #444; margin-bottom: 4px; }
+  .bubble.right { right: 4%; }   /* moving left ← */
+  .bubble.left  { left: 4%; }    /* moving right → */
+  /* Animations */
+  @keyframes fly-right {
+    0% { transform: translateX(0); opacity: 0; }
+    10%{ opacity: 1; }
+    90%{ opacity: 1; }
+    100% { transform: translateX(220%); opacity: 0; }
+  }
+  @keyframes fly-left {
+    0% { transform: translateX(0); opacity: 0; }
+    10%{ opacity: 1; }
+    90%{ opacity: 1; }
+    100% { transform: translateX(-220%); opacity: 0; }
+  }
+  .controls {
+    display: flex;
+    gap: 8px;
+    margin: 16px 0;
+    flex-wrap: wrap;
+  }
+  button {
+    background: #fff;
+    color: var(--fg);
+    border: 1px solid var(--fg);
+    border-radius: 10px;
+    padding: 10px 14px;
+    cursor: pointer;
+    font-weight: 600;
+  }
+  button:disabled { opacity: 0.5; cursor: not-allowed; }
+  .log {
+    background: #fff;
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    padding: 12px;
+    max-height: 220px;
+    overflow: auto;
+    font: 12px/1.45 ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+    white-space: pre-wrap;
+  }
+  details {
+    margin-top: 10px;
+  }
+  .note {
+    border-left: 4px solid var(--line);
+    padding-left: 10px;
+    font-size: 0.95rem;
+    color: #111;
+  }
+  hr { border: none; border-top: 1px solid var(--line); margin: 24px 0; }
+  .apa { font-size: 0.95rem; }
+  .apa li { margin-bottom: 6px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Encrypted Peer-to-Peer Messaging — Visual Walkthrough</h1>
+  <p>This page simulates two peers deriving a shared key (ECDH), then sending messages protected with AES-GCM. While the “packet” crosses the wire, you will only see ciphertext; upon arrival it is decrypted and rendered as plaintext.</p>
+</header>
+
+<main>
+  <div class="controls">
+    <button id="runBtn">▶ Run Demo</button>
+    <button id="resetBtn" disabled>↺ Reset</button>
+  </div>
+
+  <section class="grid">
+    <div class="peer" id="peerA">
+      <h2>Peer A</h2>
+      <div><strong>EC Key (P-256):</strong></div>
+      <div class="kblock" id="aKeys">—</div>
+      <details>
+        <summary>Derived Session Key (AES-GCM)</summary>
+        <div class="kblock" id="aKeyInfo">—</div>
+      </details>
+    </div>
+
+    <div class="wire">
+      <div class="lane" aria-hidden="true"></div>
+      <div class="bubble left" id="bubbleA">
+        <small>in transit (ciphertext)</small>
+        <span id="cipherA">…</span>
+      </div>
+      <div class="bubble right" id="bubbleB">
+        <small>in transit (ciphertext)</small>
+        <span id="cipherB">…</span>
+      </div>
+    </div>
+
+    <div class="peer" id="peerB">
+      <h2>Peer B</h2>
+      <div><strong>EC Key (P-256):</strong></div>
+      <div class="kblock" id="bKeys">—</div>
+      <details>
+        <summary>Derived Session Key (AES-GCM)</summary>
+        <div class="kblock" id="bKeyInfo">—</div>
+      </details>
+    </div>
+  </section>
+
+  <h3>Connection & Crypto Log</h3>
+  <div class="log" id="log">Ready.</div>
+
+  <details class="note">
+    <summary>What is happening (conceptually)?</summary>
+    <p><strong>1) Key Agreement (ECDH):</strong> Each peer creates an ephemeral EC key pair and exchanges <em>only</em> its public key. Using Elliptic-Curve Diffie–Hellman, both derive the same shared secret and from that a symmetric session key.</p>
+    <p><strong>2) Authenticated Encryption (AES-GCM):</strong> Messages are sealed using AES in Galois/Counter Mode, which provides confidentiality and integrity (AEAD). Each message uses a fresh 96-bit IV/nonce, as recommended by NIST SP 800-38D.</p>
+    <p><strong>3) Transit vs. Endpoints:</strong> The “wire” only carries ciphertext. Each endpoint shows the original plaintext only after successful decryption and authentication.</p>
+  </details>
+
+  <hr />
+
+<section>
+  <h3>References (APA)</h3>
+  <ol class="apa">
+    <li>Mozilla. (2025). <em>SubtleCrypto — Web Crypto API</em>. MDN Web Docs. https://developer.mozilla.org/en-US/docs/Web/API/SubtleCrypto</li>
+    <li>Mozilla. (2025). <em>SubtleCrypto.encrypt()</em>. MDN Web Docs. https://developer.mozilla.org/en-US/docs/Web/API/SubtleCrypto/encrypt</li>
+    <li>Mozilla. (2025). <em>AesGcmParams — Web Crypto API</em>. MDN Web Docs. https://developer.mozilla.org/en-US/docs/Web/API/AesGcmParams</li>
+    <li>Dworkin, M. (2007). <em>Recommendation for Block Cipher Modes of Operation: Galois/Counter Mode (GCM) and GMAC</em> (NIST SP 800-38D). National Institute of Standards and Technology. https://csrc.nist.gov/pubs/sp/800/38/d/final</li>
+    <li>McGrew, D. (2008). <em>An Interface and Algorithms for Authenticated Encryption</em> (RFC 5116). RFC Editor. https://www.rfc-editor.org/info/rfc5116</li>
+    <li>Rescorla, E. (2018). <em>The Transport Layer Security (TLS) Protocol Version 1.3</em> (RFC 8446). RFC Editor. https://www.rfc-editor.org/info/rfc8446</li>
+    <li>Mozilla. (2025). <em>WebRTC API</em>. MDN Web Docs. https://developer.mozilla.org/en-US/docs/Web/API/WebRTC_API</li>
+    <li>Mozilla. (2025). <em>Introduction to WebRTC protocols</em>. MDN Web Docs. https://developer.mozilla.org/en-US/docs/Web/API/WebRTC_API/Protocols</li>
+  </ol>
+</section>
+</main>
+
+<footer>
+  <small>Demo only. Do not use this exact pattern for production security. Always follow current standards guidance and perform threat modeling.</small>
+</footer>
+
+<script>
+/* ==============================
+   Utilities
+============================== */
+const $ = sel => document.querySelector(sel);
+const logEl = $("#log");
+const enc = new TextEncoder();
+const dec = new TextDecoder();
+const toHex = buf =>
+  Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, "0")).join("");
+const toB64 = buf => btoa(String.fromCharCode(...new Uint8Array(buf)));
+function log(line) {
+  const ts = new Date().toLocaleTimeString();
+  logEl.textContent += `\n[${ts}] ${line}`;
+  logEl.scrollTop = logEl.scrollHeight;
+}
+
+/* ==============================
+   Peer state
+============================== */
+const peers = {
+  A: { kp: null, pub: null, aesKey: null },
+  B: { kp: null, pub: null, aesKey: null }
+};
+
+/* ==============================
+   Crypto helpers (Web Crypto)
+============================== */
+async function genEcdhKeyPair() {
+  return crypto.subtle.generateKey(
+    { name: "ECDH", namedCurve: "P-256" },
+    true,
+    ["deriveKey", "deriveBits"]
+  );
+}
+async function exportJwkPublic(key) {
+  return crypto.subtle.exportKey("jwk", key);
+}
+
+// Derive a symmetric AES-GCM key from ECDH shared secret.
+// Note: For a didactic demo we derive directly to AES-GCM.
+// In production, prefer deriveBits + HKDF context binding.
+async function deriveAesGcm(myPrivKey, theirPubKey) {
+  return crypto.subtle.deriveKey(
+    { name: "ECDH", public: theirPubKey },
+    myPrivKey,
+    { name: "AES-GCM", length: 256 },
+    true,
+    ["encrypt", "decrypt"]
+  );
+}
+
+async function aesGcmEncrypt(aesKey, plaintext) {
+  const iv = crypto.getRandomValues(new Uint8Array(12)); // 96-bit nonce (SP 800-38D guidance)
+  const ct = await crypto.subtle.encrypt(
+    { name: "AES-GCM", iv },
+    aesKey,
+    enc.encode(plaintext)
+  );
+  return { iv, ct };
+}
+async function aesGcmDecrypt(aesKey, iv, ciphertext) {
+  const pt = await crypto.subtle.decrypt(
+    { name: "AES-GCM", iv },
+    aesKey,
+    ciphertext
+  );
+  return dec.decode(pt);
+}
+
+/* ==============================
+   UI helpers
+============================== */
+function showKeys() {
+  Promise.all([
+    peers.A.kp ? exportJwkPublic(peers.A.kp.publicKey) : null,
+    peers.B.kp ? exportJwkPublic(peers.B.kp.publicKey) : null
+  ]).then(([ajwk, bjwk]) => {
+    $("#aKeys").textContent = ajwk ? JSON.stringify(ajwk, null, 2) : "—";
+    $("#bKeys").textContent = bjwk ? JSON.stringify(bjwk, null, 2) : "—";
+  });
+}
+async function keyThumbprint(aesKey) {
+  const raw = await crypto.subtle.exportKey("raw", aesKey); // 32 bytes
+  return toHex(await crypto.subtle.digest("SHA-256", raw)).slice(0, 16);
+}
+async function showSessionKeys() {
+  $("#aKeyInfo").textContent = peers.A.aesKey
+    ? `AES-256-GCM\nthumb: ${await keyThumbprint(peers.A.aesKey)}`
+    : "—";
+  $("#bKeyInfo").textContent = peers.B.aesKey
+    ? `AES-256-GCM\nthumb: ${await keyThumbprint(peers.B.aesKey)}`
+    : "—";
+}
+
+/* Animate a ciphertext bubble across the wire. dir: "AtoB" or "BtoA" */
+function animateBubble(dir, label, b64Cipher, ms = 2000) {
+  const bubble = dir === "AtoB" ? $("#bubbleA") : $("#bubbleB");
+  const span = dir === "AtoB" ? $("#cipherA") : $("#cipherB");
+  bubble.style.opacity = 0;
+  span.textContent = `${label}\n${b64Cipher}`;
+  bubble.style.animation = "none";
+  // Force reflow so the animation can restart
+  void bubble.offsetWidth;
+  const anim = dir === "AtoB" ? "fly-right" : "fly-left";
+  bubble.style.animation = `${anim} ${ms}ms ease-in-out 1 forwards`;
+  bubble.style.opacity = 1;
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+/* ==============================
+   Demo choreography
+============================== */
+async function runDemo() {
+  $("#runBtn").disabled = true;
+  $("#resetBtn").disabled = true;
+  log("Generating ephemeral ECDH key pairs (P-256) for A and B…");
+  peers.A.kp = await genEcdhKeyPair();
+  peers.B.kp = await genEcdhKeyPair();
+  showKeys();
+
+  const aPub = peers.A.kp.publicKey;
+  const bPub = peers.B.kp.publicKey;
+
+  log("Exchanging public keys (A ⇄ B).");
+  peers.A.aesKey = await deriveAesGcm(peers.A.kp.privateKey, bPub);
+  peers.B.aesKey = await deriveAesGcm(peers.B.kp.privateKey, aPub);
+  await showSessionKeys();
+  log("Both peers derived an identical AES-256-GCM session key (not shown on the wire).");
+
+  // A -> B
+  const msgA = "Hello, Peer B. (This is confidential.)";
+  log(`Peer A: encrypting message for B using AES-GCM with a fresh IV…`);
+  const { iv: ivA, ct: ctA } = await aesGcmEncrypt(peers.A.aesKey, msgA);
+  const labelA = `AES-GCM\nIV=${toHex(ivA)}`
+  const b64A = toB64(ctA);
+  log(`Wire: ciphertext length = ${new Uint8Array(ctA).length} bytes. Sending →`);
+  await animateBubble("AtoB", labelA, b64A, 2200);
+  log("Peer B: received ciphertext. Attempting decryption and authentication…");
+  const decA = await aesGcmDecrypt(peers.B.aesKey, ivA, ctA);
+  log(`Peer B: ✅ decrypted: "${decA}"`);
+
+  // B -> A (reply)
+  const msgB = "Hello, Peer A. Reply received. Integrity verified.";
+  log(`Peer B: encrypting reply for A (fresh IV)…`);
+  const { iv: ivB, ct: ctB } = await aesGcmEncrypt(peers.B.aesKey, msgB);
+  const labelB = `AES-GCM\nIV=${toHex(ivB)}`
+  const b64B = toB64(ctB);
+  log(`Wire: ciphertext length = ${new Uint8Array(ctB).length} bytes. Sending ←`);
+  await animateBubble("BtoA", labelB, b64B, 2200);
+  log("Peer A: received ciphertext. Attempting decryption and authentication…");
+  const decB = await aesGcmDecrypt(peers.A.aesKey, ivB, ctB);
+  log(`Peer A: ✅ decrypted: "${decB}"`);
+
+  log("Demo complete. You can reset and run again.");
+  $("#resetBtn").disabled = false;
+}
+
+function resetDemo() {
+  $("#runBtn").disabled = false;
+  $("#resetBtn").disabled = true;
+  logEl.textContent = "Ready.";
+  $("#aKeys").textContent = "—";
+  $("#bKeys").textContent = "—";
+  $("#aKeyInfo").textContent = "—";
+  $("#bKeyInfo").textContent = "—";
+  $("#bubbleA").style.animation = "none";
+  $("#bubbleB").style.animation = "none";
+  $("#bubbleA").style.opacity = 0;
+  $("#bubbleB").style.opacity = 0;
+  peers.A = { kp: null, pub: null, aesKey: null };
+  peers.B = { kp: null, pub: null, aesKey: null };
+}
+
+/* Wire up controls */
+$("#runBtn").addEventListener("click", runDemo);
+$("#resetBtn").addEventListener("click", resetDemo);
+</script>
+</body>
+</html>

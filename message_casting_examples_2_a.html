@@ -1,0 +1,463 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>P2P over Unicast, Broadcast, and Multicast — Detailed Animated Demo</title>
+
+<style>
+  /* ===== Theme / Base ===== */
+  :root{
+    --bg:#fff; --fg:#000; --line:#bdbdbd; --card:#f6f6f6;
+    --mono: 12px/1.35 ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+    --accent:#111;
+  }
+  html, body{
+    margin:0; padding:0; background:var(--bg); color:var(--fg);
+    font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial;
+  }
+  header, main, footer{ max-width:1200px; margin:20px auto; padding:0 16px; }
+  h1{ margin:.2rem 0 .6rem; }
+  p{ line-height:1.5; }
+
+  /* ===== Controls / Buttons ===== */
+  .toolbar{
+    display:flex; flex-wrap:wrap; gap:10px; align-items:center; margin:12px 0 16px;
+  }
+  .buttons{ display:flex; flex-wrap:wrap; gap:10px; }
+  button{
+    background:#fff; color:var(--fg); border:1px solid var(--fg);
+    border-radius:999px; padding:10px 14px; cursor:pointer; font-weight:600;
+  }
+  button:disabled{ opacity:.5; cursor:not-allowed }
+  .inline{
+    display:flex; gap:10px; align-items:center; flex-wrap:wrap;
+    padding:8px 10px; border:1px solid var(--line); border-radius:10px; background:#fff;
+  }
+  .inline label{ font-size:.9rem }
+  input[type="range"]{ accent-color:#000; }
+
+  /* ===== Scene Card ===== */
+  .scene{
+    background:#fff; border:1px solid var(--line); border-radius:12px; padding:14px;
+  }
+  .legend{ font-size:.95rem; margin:0 0 8px; }
+
+  /* ===== Topology Grid ===== */
+  .topology{
+    display:grid;
+    grid-template-rows: repeat(3, minmax(120px, 1fr));
+    grid-template-columns: 1fr minmax(260px, 360px) 1fr;
+    gap: 28px 28px; padding:16px;
+    border:1px dashed var(--line); border-radius:12px; background:#fff;
+    position:relative; min-height: 560px;
+  }
+  .lane{ position:absolute; left:24px; right:24px; height:2px; background:var(--line) }
+  .lane.l1{ top: calc( (16px) + (1 * (100% - 32px))/6 ); }
+  .lane.l2{ top: calc( (16px) + (3 * (100% - 32px))/6 ); }
+  .lane.l3{ top: calc( (16px) + (5 * (100% - 32px))/6 ); }
+
+  /* rows are kept in markup; we “project” their children into grid cells */
+  .topology > .row{ display:contents; }
+  .topology > .row.r1 > :nth-child(1){ grid-row:1; grid-column:1; } /* A */
+  .topology > .row.r1 > :nth-child(2){ grid-row:1; grid-column:2; } /* LAN A */
+  .topology > .row.r1 > :nth-child(3){ grid-row:1; grid-column:3; } /* B */
+
+  .topology > .row.r2 > :nth-child(1){ grid-row:2; grid-column:1; } /* C */
+  .topology > .row.r2 > :nth-child(2){ grid-row:2; grid-column:2; } /* Router */
+  .topology > .row.r2 > :nth-child(3){ grid-row:2; grid-column:3; } /* D */
+
+  .topology > .row.r3 > :nth-child(1){ grid-row:3; grid-column:1; } /* LAN A switch */
+  .topology > .row.r3 > :nth-child(2){ grid-row:3; grid-column:2; } /* LAN B label */
+  .topology > .row.r3 > :nth-child(3){ grid-row:3; grid-column:3; } /* LAN B switch */
+
+  /* Nodes / Labels */
+  .peer, .router, .cloud, .net{
+    background:var(--card); border:1px solid var(--line); border-radius:12px;
+    padding:8px 10px; max-width: clamp(200px, 28vw, 380px); word-wrap:anywhere;
+  }
+  .peer h3{ margin:0 0 4px; font-size:1rem; }
+  .peer code{ display:block; font:var(--mono); white-space:pre-wrap; }
+  .router, .cloud, .net{ text-align:center; background:#fff; }
+  .router small, .cloud small{ display:block; font-size:.8rem; color:#333; }
+
+  /* Message/Packet bubble + header overlay */
+  .bubble{
+    position:absolute; top:0; left:0; transform:translate(-9999px,-9999px);
+    padding:8px 10px; background:#fff; border:1px solid var(--fg);
+    border-radius:14px; font:var(--mono); pointer-events:none;
+    box-shadow: 0 1px 0 rgba(0,0,0,.06);
+  }
+  .hdr{
+    position:absolute; top:0; left:0; transform:translate(-9999px,-9999px);
+    background:#fff; color:var(--accent); border:1px solid var(--fg);
+    border-radius:10px; padding:8px 10px; font:var(--mono);
+    white-space:pre; box-shadow:0 1px 0 rgba(0,0,0,.06);
+  }
+  .hdr strong{ display:block; margin-bottom:4px; }
+  @keyframes fly{
+    0%{ transform:translate(var(--x0), var(--y0)); opacity:0 }
+    10%{ opacity:1 } 90%{ opacity:1 }
+    100%{ transform:translate(var(--x1), var(--y1)); opacity:0 }
+  }
+
+  /* Log / Details */
+  .log{
+    background:#fff; border:1px solid var(--line); border-radius:12px;
+    padding:12px; margin-top:14px; max-height:260px; overflow:auto;
+    font:12px/1.45 ui-monospace, Menlo, Consolas, monospace; white-space:pre-wrap;
+  }
+  details{ margin-top:10px; }
+  hr{ border:none; border-top:1px solid var(--line); margin:20px 0; }
+  .apa{ font-size:.95rem; } .apa li{ margin-bottom:6px; }
+
+  .hint{ font-size:.9rem; color:#111; margin-top:8px }
+
+  /* Responsive */
+  @media (max-width: 980px){
+    .topology{
+      grid-template-columns: 1fr;
+      grid-template-rows: repeat(9, auto);
+      gap: 18px; min-height:auto;
+    }
+    .lane{ display:none; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1>Peer-to-Peer without Encryption — Unicast, Broadcast, Multicast (Detailed)</h1>
+  <p>This interactive visualization shows how plaintext traffic moves on a LAN/WAN. It simulates ARP, default-gateway routing, and multicast membership (IGMP). No real sockets—safe to run offline.</p>
+</header>
+
+<main>
+  <div class="toolbar">
+    <div class="buttons">
+      <button id="btnUnicast">▶ Unicast (LAN + WAN)</button>
+      <button id="btnBroadcast">▶ Broadcast (LAN)</button>
+      <button id="btnMulticastLan">▶ Multicast (LAN)</button>
+      <button id="btnMulticastWan">▶ Multicast (WAN)</button>
+      <button id="btnStep">⏭ Step</button>
+      <button id="btnAuto">⏯ Auto</button>
+      <button id="btnReset" disabled>↺ Reset</button>
+    </div>
+    <div class="inline">
+      <label for="speed">Speed:</label>
+      <input type="range" id="speed" min="0.5" max="2.0" step="0.1" value="1.0">
+      <span id="speedVal">1.0×</span>
+    </div>
+    <div class="inline">
+      <strong>IGMP Group 239.1.1.1</strong>
+      <label><input type="checkbox" id="joinB" checked> B joined</label>
+      <label><input type="checkbox" id="joinC"> C joined</label>
+      <label><input type="checkbox" id="joinD" checked> D joined</label>
+    </div>
+  </div>
+
+  <section class="scene">
+    <p class="legend"><strong>Topology:</strong> Left subnet (LAN A) with A, B, C. Router connects to right subnet (LAN B) with D. Gray lines are links; moving bubbles are <em>plaintext</em> frames/packets. Toggle IGMP membership above.</p>
+    <div class="topology" id="topology">
+      <div class="lane l1" aria-hidden="true"></div>
+      <div class="lane l2" aria-hidden="true"></div>
+      <div class="lane l3" aria-hidden="true"></div>
+
+      <div class="row r1">
+        <div class="peer" id="peerA">
+          <h3>Peer A</h3>
+          <code>IP 192.168.1.10/24
+GW 192.168.1.1
+MAC AA:AA:AA:AA:AA:AA</code>
+        </div>
+        <div class="net">LAN A — 192.168.1.0/24</div>
+        <div class="peer" id="peerB">
+          <h3>Peer B</h3>
+          <code>IP 192.168.1.20/24
+MAC BB:BB:BB:BB:BB:BB</code>
+        </div>
+      </div>
+
+      <div class="row r2">
+        <div class="peer" id="peerC">
+          <h3>Peer C</h3>
+          <code>IP 192.168.1.30/24
+MAC CC:CC:CC:CC:CC:CC</code>
+        </div>
+        <div class="router" id="router">
+          <strong>Router</strong>
+          <small>LAN A: 192.168.1.1</small>
+          <small>LAN B: 10.0.0.1</small>
+        </div>
+        <div class="peer" id="peerD">
+          <h3>Peer D</h3>
+          <code>IP 10.0.0.20/24
+MAC DD:DD:DD:DD:DD:DD</code>
+        </div>
+      </div>
+
+      <div class="row r3">
+        <div class="net">LAN A Switch</div>
+        <div class="cloud">LAN B — 10.0.0.0/24<br/><small>(other side / routed hop)</small></div>
+        <div class="net">LAN B Switch</div>
+      </div>
+
+      <!-- Packet bubble + header overlay templates -->
+      <div class="bubble" id="bubble" aria-hidden="true"></div>
+      <div class="hdr" id="hdr" aria-hidden="true"></div>
+    </div>
+
+    <div class="hint">Tip: Use <em>Step</em> to walk a scenario frame-by-frame. <em>Auto</em> plays continuously at the current speed.</div>
+    <div class="log" id="log">Ready.</div>
+
+    <details>
+      <summary>What you are seeing</summary>
+      <ul>
+        <li><strong>Unicast:</strong> A → B stays on LAN A (switch forwards to B’s port). A → D is off-subnet, so A sends to the default gateway (router), which forwards into LAN B.</li>
+        <li><strong>Broadcast:</strong> IPv4 broadcast (e.g., ARP who-has). Switch floods the frame to all local ports; <em>routers do not forward</em> broadcasts.</li>
+        <li><strong>Multicast:</strong> A sends to a group (239.1.1.1). Only receivers that joined (via IGMP) get frames. Routers forward group traffic only where members exist and multicast routing is enabled.</li>
+        <li><strong>Headers panel:</strong> Toggle shows L2/L3/L4 key fields (dst/src MAC, dst/src IP, TTL, protocol/ports).</li>
+      </ul>
+    </details>
+  </section>
+
+  <hr />
+  <section>
+    <h3>References (APA)</h3>
+    <ol class="apa">
+      <li>Postel, J. (1980). <em>User Datagram Protocol</em> (RFC 768). RFC Editor. https://www.rfc-editor.org/rfc/rfc768</li>
+      <li>Braden, R. (1989). <em>Requirements for Internet Hosts — Communication Layers</em> (RFC 1122). RFC Editor. https://www.rfc-editor.org/rfc/rfc1122</li>
+      <li>Mogul, J. (1984). <em>Broadcasting Internet Datagrams</em> (RFC 919). RFC Editor. https://www.rfc-editor.org/rfc/rfc919</li>
+      <li>Braden, R., & Postel, J. (1984). <em>Broadcasting Internet Datagrams in the Presence of Subnets</em> (RFC 922). RFC Editor. https://www.rfc-editor.org/rfc/rfc922</li>
+      <li>Deering, S. (1989). <em>Host Extensions for IP Multicasting</em> (RFC 1112). RFC Editor. https://www.rfc-editor.org/rfc/rfc1112</li>
+      <li>Fenner, W. (1997). <em>Internet Group Management Protocol, Version 2</em> (RFC 2236). RFC Editor. https://www.rfc-editor.org/rfc/rfc2236</li>
+      <li>Cain, B., Deering, S., Kouvelas, I., Fenner, B., & Jacobson, V. (2006). <em>Internet Group Management Protocol, Version 3</em> (RFC 3376). RFC Editor. https://www.rfc-editor.org/rfc/rfc3376</li>
+      <li>Cotton, M., Vegoda, L., & Meyer, D. (2010). <em>IPv4 Multicast Address Assignments</em> (RFC 5771). RFC Editor. https://www.rfc-editor.org/rfc/rfc5771</li>
+      <li>Cisco. (2024). <em>IP Multicast Technology Overview</em>. Cisco Docs. https://www.cisco.com/</li>
+    </ol>
+  </section>
+</main>
+
+<footer><small>Educational simulation: delivery scope and forwarding behavior only; no encryption demonstrated.</small></footer>
+
+<script>
+/* ===== Helpers ===== */
+const $ = s => document.querySelector(s);
+const topo = $("#topology");
+const bubbleTpl = $("#bubble");
+const hdrTpl = $("#hdr");
+const logEl = $("#log");
+const speedSlider = $("#speed");
+const speedVal = $("#speedVal");
+const A = $("#peerA"), B = $("#peerB"), C = $("#peerC"), D = $("#peerD"), R = $("#router");
+const joinB = $("#joinB"), joinC = $("#joinC"), joinD = $("#joinD");
+
+let autoTimer = null;
+let stepQueue = [];     // queue of async steps for Step/Auto
+let playing = false;
+
+function log(line){
+  const ts = new Date().toLocaleTimeString();
+  logEl.textContent += `\n[${ts}] ${line}`;
+  logEl.scrollTop = logEl.scrollHeight;
+}
+function centerOf(el){
+  const r = el.getBoundingClientRect();
+  const p = topo.getBoundingClientRect();
+  return { x: r.left - p.left + r.width/2, y: r.top - p.top + r.height/2 };
+}
+function ms(base){ return Math.max(500, Math.round(base / parseFloat(speedSlider.value))); }
+
+function mkBubble(text){
+  const b = bubbleTpl.cloneNode(true);
+  b.removeAttribute("id"); b.classList.add("live"); b.textContent = text;
+  topo.appendChild(b); return b;
+}
+function mkHdr({eth, ip, udp, title}){
+  const h = hdrTpl.cloneNode(true);
+  h.removeAttribute("id"); h.classList.add("live");
+  h.innerHTML =
+    `<strong>${title}</strong>`+
+    `Ethernet  dst=${eth.dst}  src=${eth.src}\n`+
+    `IPv4      src=${ip.src}  dst=${ip.dst}  TTL=${ip.ttl}  proto=${ip.proto}\n`+
+    (udp ? `UDP       sport=${udp.sport}  dport=${udp.dport}\n` : ``);
+  topo.appendChild(h); return h;
+}
+function place(el, x, y){ el.style.transform = `translate(${x}px, ${y}px)`; }
+
+function animatePacket({src, dst, text, header, duration=1500, yNudge=0}){
+  const s = centerOf(src), d = centerOf(dst);
+  const x0 = s.x - 40, y0 = s.y - 12;
+  const x1 = d.x - 40, y1 = d.y - 12 + yNudge;
+
+  const b = mkBubble(text);
+  b.style.setProperty("--x0", `${x0}px`);
+  b.style.setProperty("--y0", `${y0}px`);
+  b.style.setProperty("--x1", `${x1}px`);
+  b.style.setProperty("--y1", `${y1}px`);
+  b.style.animation = `fly ${duration}ms ease-in-out 1 forwards`;
+
+  let h = null;
+  if (header){
+    h = mkHdr(header);
+    // track header near bubble start; simple: place at 10px offset
+    place(h, x0 + 90, y0 - 30);
+    h.style.opacity = 0.92;
+    // update header fade midway
+    setTimeout(()=>{ h.style.opacity = 0.85; }, duration * 0.6);
+  }
+
+  return new Promise(res => setTimeout(()=>{ b.remove(); if (h) h.remove(); res(); }, duration));
+}
+
+function reset(){
+  logEl.textContent = "Ready.";
+  for(const n of topo.querySelectorAll(".live")) n.remove();
+  $("#btnReset").disabled = false;
+  stopAuto();
+  stepQueue = [];
+}
+
+/* ===== Scenario Builders (push steps into stepQueue) ===== */
+
+function scenarioUnicast(){
+  reset();
+  log("UNICAST: A resolves B by ARP on LAN A (who-has 192.168.1.20?).");
+  stepQueue.push(()=>animatePacket({
+    src:A, dst:B, text:"ARP who-has 192.168.1.20?", duration:ms(1100), yNudge:-16,
+    header:{ title:"Layer 2 Broadcast (ARP)",
+      eth:{dst:"ff:ff:ff:ff:ff:ff", src:"AA:AA:AA:AA:AA:AA"},
+      ip:{src:"0.0.0.0", dst:"255.255.255.255", ttl:1, proto:"ARP"} }
+  }));
+  stepQueue.push(()=>animatePacket({
+    src:A, dst:C, text:"ARP who-has 192.168.1.20?", duration:ms(1100), yNudge:+16,
+    header:{ title:"Flood on switch", eth:{dst:"ff:ff:ff:ff:ff:ff", src:"AA:…"},
+      ip:{src:"0.0.0.0", dst:"255.255.255.255", ttl:1, proto:"ARP"} }
+  }));
+  stepQueue.push(()=>{ log("B replies with its MAC."); return animatePacket({
+    src:B, dst:A, text:"ARP reply: 192.168.1.20 @ BB:…", duration:ms(1100),
+    header:{ title:"Unicast ARP Reply",
+      eth:{dst:"AA:…", src:"BB:…"}, ip:{src:"192.168.1.20", dst:"192.168.1.10", ttl:64, proto:"ARP"} }
+  });});
+
+  stepQueue.push(()=>{ log("A sends unicast payload to B on LAN A."); return animatePacket({
+    src:A, dst:B, text:"(plaintext) Hello B", duration:ms(1500),
+    header:{ title:"Unicast Frame",
+      eth:{dst:"BB:…", src:"AA:…"}, ip:{src:"192.168.1.10", dst:"192.168.1.20", ttl:64, proto:"UDP"}, udp:{sport:5000, dport:5000} }
+  });});
+
+  stepQueue.push(()=>{ log("Off-subnet unicast to D: A targets default gateway 192.168.1.1."); return animatePacket({
+    src:A, dst:R, text:"To 10.0.0.20 via GW", duration:ms(1500),
+    header:{ title:"L2 to Router, L3 to D",
+      eth:{dst:"router-mac", src:"AA:…"}, ip:{src:"192.168.1.10", dst:"10.0.0.20", ttl:64, proto:"UDP"}, udp:{sport:5001, dport:5001} }
+  });});
+  stepQueue.push(()=>{ log("Router decrements TTL and forwards into LAN B toward D."); return animatePacket({
+    src:R, dst:D, text:"(plaintext) Hello D (routed)", duration:ms(1500),
+    header:{ title:"Routed Unicast",
+      eth:{dst:"DD:…", src:"router-b-if"}, ip:{src:"192.168.1.10", dst:"10.0.0.20", ttl:63, proto:"UDP"}, udp:{sport:5001, dport:5001} }
+  });});
+  stepQueue.push(()=>{ log("Unicast done."); return Promise.resolve(); });
+}
+
+function scenarioBroadcast(){
+  reset();
+  log("BROADCAST: A sends IPv4 broadcast (e.g., ARP discovery). Switch floods only on LAN A. Routers do not forward.");
+  stepQueue.push(()=>animatePacket({
+    src:A, dst:B, text:"BROADCAST 255.255.255.255", duration:ms(1500), yNudge:-16,
+    header:{ title:"L3 Broadcast",
+      eth:{dst:"ff:ff:ff:ff:ff:ff", src:"AA:…"}, ip:{src:"192.168.1.10", dst:"255.255.255.255", ttl:1, proto:"UDP"} }
+  }));
+  stepQueue.push(()=>animatePacket({
+    src:A, dst:C, text:"BROADCAST 255.255.255.255", duration:ms(1500), yNudge:+16,
+    header:{ title:"Switch Flood",
+      eth:{dst:"ff:ff:ff:ff:ff:ff", src:"AA:…"}, ip:{src:"192.168.1.10", dst:"255.255.255.255", ttl:1, proto:"UDP"} }
+  }));
+  stepQueue.push(()=>animatePacket({
+    src:A, dst:R, text:"(blocked at router)", duration:ms(1200),
+    header:{ title:"No Broadcast Forwarding",
+      eth:{dst:"ff:ff:ff:ff:ff:ff", src:"AA:…"}, ip:{src:"192.168.1.10", dst:"255.255.255.255", ttl:1, proto:"UDP"} }
+  }));
+  stepQueue.push(()=>{ log("Broadcast done."); return Promise.resolve(); });
+}
+
+function members(){ return { B: joinB.checked, C: joinC.checked, D: joinD.checked }; }
+
+function scenarioMulticastLan(){
+  reset();
+  const m = members();
+  log(`MULTICAST (LAN): group 239.1.1.1. Members on LAN A: ${m.B?"B":""}${m.B&&m.C?", ":""}${m.C?"C":"" || "none"}.`);
+  stepQueue.push(()=>{ if(m.B) return animatePacket({
+    src:A, dst:B, text:"MC 239.1.1.1 (LAN A)", duration:ms(1500),
+    header:{ title:"Multicast to 239.1.1.1",
+      eth:{dst:"01:00:5e:…", src:"AA:…"}, ip:{src:"192.168.1.10", dst:"239.1.1.1", ttl:64, proto:"UDP"}, udp:{sport:6000, dport:6000} }
+  }); else return Promise.resolve(); });
+  stepQueue.push(()=>{ if(m.C) return animatePacket({
+    src:A, dst:C, text:"MC 239.1.1.1 (LAN A)", duration:ms(1500),
+    header:{ title:"Multicast to 239.1.1.1",
+      eth:{dst:"01:00:5e:…", src:"AA:…"}, ip:{src:"192.168.1.10", dst:"239.1.1.1", ttl:64, proto:"UDP"} }
+  }); else return animatePacket({
+    src:A, dst:C, text:"(not a member)", duration:ms(1200),
+    header:{ title:"Not Delivered",
+      eth:{dst:"filtered", src:"AA:…"}, ip:{src:"192.168.1.10", dst:"239.1.1.1", ttl:64, proto:"UDP"} }
+  }); });
+  stepQueue.push(()=>{ log("Router may forward only if multicast routing is configured and downstream members exist; this LAN demo stays local."); return Promise.resolve(); });
+}
+
+
+function scenarioMulticastWan(){
+  reset();
+  const m = members();
+  log(`MULTICAST (WAN): D membership=${m.D ? "joined" : "not joined"} on LAN B. Router forwards only toward LANs with members (PIM) and IGMP reports.`);
+  // Into router
+  stepQueue.push(()=>animatePacket({
+    src:A, dst:R, text:"MC 239.1.1.1 → Router", duration:ms(1400),
+    header:{ title:"Multicast to Router",
+      eth:{dst:"router-mac", src:"AA:…"}, ip:{src:"192.168.1.10", dst:"239.1.1.1", ttl:64, proto:"UDP"} }
+  }));
+  // To D if joined
+  stepQueue.push(()=>{ if(m.D) { log("Router forwards into LAN B toward D (member)."); return animatePacket({
+    src:R, dst:D, text:"MC 239.1.1.1 (forwarded)", duration:ms(1500),
+    header:{ title:"RPF/Forwarded Multicast",
+      eth:{dst:"DD:…", src:"router-b-if"}, ip:{src:"192.168.1.10", dst:"239.1.1.1", ttl:63, proto:"UDP"} }
+  }); } else { log("No members on LAN B → no forwarding."); return Promise.resolve(); }});
+}
+
+/* ===== Step/Auto Player ===== */
+async function runStepsOnce(){
+  if(stepQueue.length===0){ $("#btnReset").disabled=false; return; }
+  const fn = stepQueue.shift();
+  await fn();
+}
+function startAuto(){
+  if(playing) return;
+  playing = true;
+  $("#btnAuto").textContent = "⏸ Pause";
+  const tick = async () => {
+    if(!playing) return;
+    if(stepQueue.length===0){ stopAuto(); $("#btnReset").disabled=false; return; }
+    await runStepsOnce();
+    autoTimer = setTimeout(tick, 250);
+  };
+  tick();
+}
+function stopAuto(){
+  playing = false;
+  $("#btnAuto").textContent = "⏯ Auto";
+  if(autoTimer){ clearTimeout(autoTimer); autoTimer=null; }
+}
+
+/* ===== Wire Up ===== */
+$("#btnUnicast").addEventListener("click", ()=>{ scenarioUnicast(); });
+$("#btnBroadcast").addEventListener("click", ()=>{ scenarioBroadcast(); });
+$("#btnMulticastLan").addEventListener("click", ()=>{ scenarioMulticastLan(); });
+$("#btnMulticastWan").addEventListener("click", ()=>{ scenarioMulticastWan(); });
+
+$("#btnStep").addEventListener("click", runStepsOnce);
+$("#btnAuto").addEventListener("click", ()=>{ playing ? stopAuto() : startAuto(); });
+$("#btnReset").addEventListener("click", reset);
+
+speedSlider.addEventListener("input", ()=> speedVal.textContent = `${parseFloat(speedSlider.value).toFixed(1)}×`);
+
+// Initialize
+reset();
+</script>
+</body>
+</html>

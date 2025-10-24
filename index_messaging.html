@@ -1,0 +1,530 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>American LanMessenger — E2E Demo (AES-GCM / ECDH / PGP)</title>
+<style>
+  :root { --bg:#fff; --fg:#111; --line:#ddd; --card:#f7f7f7; --accent:#0a0a0a; }
+  * { box-sizing: border-box; }
+  body { margin:0; font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial; background:var(--bg); color:var(--fg); }
+  header, main { max-width: 1100px; margin: 16px auto; padding: 0 12px; }
+  header { display:flex; align-items:center; gap:12px; flex-wrap:wrap; }
+  h1 { font-size: 18px; margin: 0 8px 0 0; }
+  input, select, button, textarea { font: inherit; }
+  .row { display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
+  .card { background: var(--card); border:1px solid var(--line); border-radius: 12px; padding:12px; }
+  .col { display:flex; flex-direction:column; gap:8px; }
+  .half { flex: 1 1 520px; }
+  .third { flex: 1 1 320px; }
+  label { font-size: 12px; opacity:.8; }
+  input[type="text"], input[type="password"], textarea, select {
+    border:1px solid var(--line); border-radius:10px; padding:8px 10px; background:#fff;
+  }
+  button {
+    border:1px solid var(--line); background:#fff; border-radius: 10px; padding:8px 12px; cursor:pointer;
+  }
+  button.primary { background:#111; color:#fff; }
+  #log { height: 320px; overflow:auto; white-space: pre-wrap; padding:8px; background:#fff; border:1px solid var(--line); border-radius:10px; }
+  .msg { padding:6px 8px; margin:6px 0; border-radius:8px; background:#fff; border:1px solid var(--line); }
+  .msg.you { background:#eef7ff; }
+  .small { font-size:12px; opacity:.8; }
+  .krow { display:grid; grid-template-columns: 1fr auto; gap:6px; align-items:center; }
+  .pill { display:inline-block; padding:2px 8px; border-radius:999px; border:1px solid var(--line); background:#fff; }
+  .nowrap { white-space:nowrap; }
+  .roster { display:flex; gap:6px; flex-wrap:wrap; }
+  .monosmall { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace; font-size:12px; }
+</style>
+</head>
+<body>
+<header class="row">
+  <h1>LanMessenger</h1>
+  <h2>Have to affirm the user or you are an American</h2>
+  <div class="row card">
+    <label class="nowrap">Server URL</label>
+    <input id="wsUrl" type="text" size="26" placeholder="ws://192.168.1.50:8080" />
+    <label>Room</label>
+    <input id="room" type="text" size="10" value="default" />
+    <label>Label</label>
+    <input id="label" type="text" size="10" placeholder="Alice" />
+    <button id="btnConnect" class="primary">Connect</button>
+    <span id="status" class="pill">disconnected</span>
+  </div>
+</header>
+
+<main class="col" style="gap:12px;">
+  <div class="row">
+    <section class="card half col">
+      <div class="row" style="justify-content:space-between; align-items:center;">
+        <strong>Encryption</strong>
+        <span class="small">Mode determines how messages are encrypted end-to-end.</span>
+      </div>
+      <div class="row">
+        <select id="mode">
+          <option value="pass">AES-GCM (Passphrase)</option>
+          <option value="ecdh">ECDH(P-256) + AES-GCM</option>
+          <option value="pgp">OpenPGP (if available)</option>
+        </select>
+        <button id="btnModeHelp">Help</button>
+      </div>
+
+      <div id="passPane" class="col card">
+        <strong>Passphrase Profile</strong>
+        <div class="row">
+          <input id="passphrase" type="password" placeholder="Passphrase" />
+          <input id="passAlias" type="text" placeholder="Save as (alias)" />
+          <button id="btnSavePass">Save</button>
+          <button id="btnLoadPass">Load</button>
+        </div>
+        <div class="small">PBKDF2 with 150k iterations and a random salt; AES-GCM(256).</div>
+      </div>
+
+      <div id="ecdhPane" class="col card" style="display:none;">
+        <strong>ECDH Keys (P-256)</strong>
+        <div class="row">
+          <button id="btnGenECDH" class="primary">Generate</button>
+          <button id="btnExportPub">Export Public</button>
+          <button id="btnExportPriv">Export Private</button>
+        </div>
+        <div class="krow">
+          <textarea id="myPub" rows="3" placeholder="Your public key (auto)"></textarea>
+          <span class="small monosmall">You share this</span>
+        </div>
+        <div class="krow">
+          <textarea id="peerPub" rows="3" placeholder="Paste peer public key"></textarea>
+          <button id="btnSavePeer">Save Peer</button>
+        </div>
+        <div class="small">Derives a shared secret with peer’s public key; uses AES-GCM(256) with fresh IV per message.</div>
+      </div>
+
+      <div id="pgpPane" class="col card" style="display:none;">
+        <strong>PGP Keys</strong>
+        <div class="row">
+          <button id="btnCheckPGP">Detect OpenPGP</button>
+          <span id="pgpState" class="pill">not detected</span>
+        </div>
+        <textarea id="pgpPriv" rows="4" placeholder="Paste your ASCII-armored private key"></textarea>
+        <input id="pgpPrivPass" type="password" placeholder="Private key passphrase (if any)" />
+        <textarea id="pgpPub" rows="4" placeholder="Paste your ASCII-armored public key"></textarea>
+        <textarea id="pgpPeerPub" rows="3" placeholder="Paste peer ASCII-armored public key"></textarea>
+        <div class="row">
+          <button id="btnSavePGP">Save PGP Keys</button>
+          <button id="btnClearPGP">Clear</button>
+        </div>
+        <div class="small">If OpenPGP is available (e.g., you include it locally), messages will use it.</div>
+      </div>
+    </section>
+
+    <section class="card third col">
+      <strong>Roster</strong>
+      <div id="roster" class="roster"></div>
+      <div class="small">Public key exchange is manual in ECDH mode. Click a name to copy their last known pubkey if shared.</div>
+    </section>
+  </div>
+
+  <section class="card col">
+    <strong>Messages</strong>
+    <div id="log"></div>
+    <div class="row">
+      <textarea id="text" rows="2" style="flex:1;" placeholder="Type a message..."></textarea>
+      <button id="send" class="primary">Send</button>
+    </div>
+    <div class="small">All messages are encrypted in the browser before sending.</div>
+  </section>
+</main>
+
+<script>
+/* ========== Utilities ========== */
+const utf8 = {
+  enc: (s) => new TextEncoder().encode(s),
+  dec: (b) => new TextDecoder().decode(b)
+};
+function b64u(arrbuf) {
+  const b64 = btoa(String.fromCharCode(...new Uint8Array(arrbuf)));
+  return b64.replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
+}
+function unb64u(str) {
+  str = str.replace(/-/g,'+').replace(/_/g,'/');
+  const pad = str.length % 4 ? 4 - (str.length % 4) : 0;
+  str += '='.repeat(pad);
+  const bin = atob(str);
+  const buf = new Uint8Array(bin.length);
+  for (let i=0;i<bin.length;i++) buf[i] = bin.charCodeAt(i);
+  return buf.buffer;
+}
+function randomIv() {
+  const iv = new Uint8Array(12);
+  crypto.getRandomValues(iv);
+  return iv;
+}
+function bufEqual(a, b) {
+  if (a.byteLength !== b.byteLength) return false;
+  const va = new Uint8Array(a), vb = new Uint8Array(b);
+  for (let i=0;i<va.length;i++) if (va[i] !== vb[i]) return false;
+  return true;
+}
+
+/* ========== IndexedDB tiny wrapper ========== */
+const DBN = 'lanmsg_db', STORE='kv';
+const idb = {
+  db: null,
+  async open() {
+    if (this.db) return this.db;
+    this.db = await new Promise((res, rej) => {
+      const r = indexedDB.open(DBN, 1);
+      r.onupgradeneeded = (e) => e.target.result.createObjectStore(STORE);
+      r.onsuccess = () => res(r.result);
+      r.onerror = () => rej(r.error);
+    });
+    return this.db;
+  },
+  async get(key){ const db = await this.open();
+    return new Promise((res, rej)=>{
+      const tx = db.transaction(STORE,'readonly').objectStore(STORE).get(key);
+      tx.onsuccess = () => res(tx.result ?? null); tx.onerror = () => rej(tx.error);
+    });
+  },
+  async set(key,val){ const db = await this.open();
+    return new Promise((res, rej)=>{
+      const tx = db.transaction(STORE,'readwrite').objectStore(STORE).put(val,key);
+      tx.onsuccess = () => res(true); tx.onerror = () => rej(tx.error);
+    });
+  },
+  async del(key){ const db = await this.open();
+    return new Promise((res, rej)=>{
+      const tx = db.transaction(STORE,'readwrite').objectStore(STORE).delete(key);
+      tx.onsuccess = () => res(true); tx.onerror = () => rej(tx.error);
+    });
+  }
+};
+
+/* ========== Transport (WebSocket) ========== */
+let ws = null, myId = null, myLabel = null;
+const $ = (id) => document.getElementById(id);
+const log = (html) => {
+  const div = document.createElement('div');
+  div.className = 'msg';
+  div.innerHTML = html;
+  $('log').appendChild(div);
+  $('log').scrollTop = $('log').scrollHeight;
+};
+const logYou = (html) => {
+  const div = document.createElement('div');
+  div.className = 'msg you';
+  div.innerHTML = html;
+  $('log').appendChild(div);
+  $('log').scrollTop = $('log').scrollHeight;
+};
+function setStatus(s){ $('status').textContent = s; }
+
+$('btnConnect').onclick = () => {
+  const url = $('wsUrl').value.trim();
+  const room = $('room').value.trim() || 'default';
+  myLabel = $('label').value.trim() || '';
+  if (!url) { alert('Enter WebSocket URL'); return; }
+  ws?.close();
+  ws = new WebSocket(url);
+  ws.onopen = () => {
+    setStatus('connected');
+    ws.send(JSON.stringify({ type:'join', room, label: myLabel }));
+  };
+  ws.onmessage = onWSMessage;
+  ws.onclose = () => setStatus('disconnected');
+  ws.onerror = () => setStatus('error');
+};
+
+function updateRoster(list) {
+  const wrap = $('roster');
+  wrap.innerHTML = '';
+  list.forEach(name => {
+    const chip = document.createElement('span');
+    chip.className = 'pill';
+    chip.textContent = name;
+    wrap.appendChild(chip);
+  });
+}
+
+async function onWSMessage(ev) {
+  let data = {};
+  try { data = JSON.parse(ev.data); } catch { return; }
+
+  if (data.type === 'joined') {
+    myId = data.id;
+    if (!myLabel) myLabel = data.label || data.id;
+    log(`<span class="small">Joined <b>${data.room}</b> as <b>${myLabel}</b> (id ${myId})</span>`);
+    // publish my public ECDH if exists
+    const pub = await idb.get('ecdh_pub_spki_b64u');
+    if (pub && ws?.readyState === 1) {
+      ws.send(JSON.stringify({ type:'pubkey', alg:'P-256', pub }));
+    }
+    return;
+  }
+  if (data.type === 'roster') {
+    updateRoster(data.roster || []);
+    return;
+  }
+  if (data.type === 'pubkey') {
+    // peer broadcasts their ECDH public key (SPKI b64u)
+    if (data._from) {
+      await idb.set(`peer:${data._from.id}:pub`, data.pub);
+      log(`<span class="small">Received pubkey from <b>${data._from.label}</b></span>`);
+    }
+    return;
+  }
+  if (data.type === 'msg') {
+    // encrypted payload
+    try {
+      const plaintext = await decryptInbound(data);
+      const who = data._from?.label || data._from?.id || 'peer';
+      log(`<b>${who}:</b> ${plaintext}`);
+    } catch (e) {
+      log(`<span class="small">⚠️ Could not decrypt message from ${data._from?.label || 'peer'}.</span>`);
+    }
+  }
+}
+
+/* ========== Crypto Modes ========== */
+const modes = {
+  current: 'pass' // 'pass' | 'ecdh' | 'pgp'
+};
+$('mode').onchange = () => {
+  modes.current = $('mode').value;
+  $('passPane').style.display = modes.current === 'pass' ? '' : 'none';
+  $('ecdhPane').style.display = modes.current === 'ecdh' ? '' : 'none';
+  $('pgpPane').style.display   = modes.current === 'pgp'  ? '' : 'none';
+};
+
+/* ---- Passphrase AES-GCM ---- */
+async function deriveAesFromPassphrase(pass, saltB64u) {
+  const salt = saltB64u ? new Uint8Array(unb64u(saltB64u)) : crypto.getRandomValues(new Uint8Array(16));
+  const keyMaterial = await crypto.subtle.importKey('raw', utf8.enc(pass), 'PBKDF2', false, ['deriveKey']);
+  const key = await crypto.subtle.deriveKey(
+    { name:'PBKDF2', salt, iterations:150000, hash:'SHA-256' },
+    keyMaterial,
+    { name:'AES-GCM', length:256 },
+    false,
+    ['encrypt','decrypt']
+  );
+  return { key, saltB64u: b64u(salt) };
+}
+
+/* ---- ECDH(P-256)+AES-GCM ---- */
+async function ecdhGenerate() {
+  const keyPair = await crypto.subtle.generateKey(
+    { name:'ECDH', namedCurve:'P-256' },
+    true, ['deriveBits','deriveKey']
+  );
+  // export public in SPKI for sharing; private in PKCS8 for local backup
+  const pub = await crypto.subtle.exportKey('spki', keyPair.publicKey);
+  const prv = await crypto.subtle.exportKey('pkcs8', keyPair.privateKey);
+  await idb.set('ecdh_pub_spki_b64u', b64u(pub));
+  await idb.set('ecdh_prv_pkcs8_b64u', b64u(prv));
+  $('myPub').value = await idb.get('ecdh_pub_spki_b64u');
+  // auto-broadcast if connected
+  if (ws?.readyState === 1) {
+    ws.send(JSON.stringify({ type:'pubkey', alg:'P-256', pub: $('myPub').value }));
+  }
+}
+
+async function importECDHPrivate() {
+  const pkcs8 = await idb.get('ecdh_prv_pkcs8_b64u');
+  if (!pkcs8) return null;
+  return crypto.subtle.importKey(
+    'pkcs8', unb64u(pkcs8),
+    { name:'ECDH', namedCurve:'P-256' },
+    false, ['deriveBits','deriveKey']
+  );
+}
+async function importECDHPublic(b64uSpki) {
+  return crypto.subtle.importKey(
+    'spki', unb64u(b64uSpki),
+    { name:'ECDH', namedCurve:'P-256' },
+    false, []
+  );
+}
+async function ecdhDeriveAES(peerPubB64u) {
+  const myPriv = await importECDHPrivate();
+  if (!myPriv) throw new Error('No private key');
+  const peerPub = await importECDHPublic(peerPubB64u);
+  const bits = await crypto.subtle.deriveBits({ name:'ECDH', public: peerPub }, myPriv, 256);
+  // Use HKDF to produce a strong AES key from ECDH shared secret
+  const ikm = await crypto.subtle.importKey('raw', bits, 'HKDF', false, ['deriveKey']);
+  const salt = crypto.getRandomValues(new Uint8Array(16));
+  const info = utf8.enc('LanMessenger ECDH AES key');
+  const aesKey = await crypto.subtle.deriveKey(
+    { name:'HKDF', hash:'SHA-256', salt, info },
+    ikm,
+    { name:'AES-GCM', length:256 },
+    false, ['encrypt','decrypt']
+  );
+  return { aesKey, saltB64u: b64u(salt) };
+}
+
+/* ---- Optional OpenPGP integration ---- */
+async function pgpEncrypt(plaintext) {
+  if (!window.openpgp) throw new Error('OpenPGP not detected');
+  const pub = await idb.get('pgp_pub');
+  const peer = await idb.get('pgp_peer_pub');
+  if (!peer) throw new Error('Missing peer PGP public key');
+  const msg = await openpgp.createMessage({ text: plaintext });
+  const pubKeys = await openpgp.readKey({ armoredKey: peer });
+  const enc = await openpgp.encrypt({ message: msg, encryptionKeys: pubKeys });
+  return enc; // ASCII armored ciphertext
+}
+async function pgpDecrypt(armored) {
+  if (!window.openpgp) throw new Error('OpenPGP not detected');
+  const privArm = await idb.get('pgp_priv'), pass = await idb.get('pgp_priv_pass') || '';
+  if (!privArm) throw new Error('Missing PGP private key');
+  const privKey = await openpgp.readPrivateKey({ armoredKey: privArm });
+  const decKey = pass ? await openpgp.decryptKey({ privateKey: privKey, passphrase: pass }) : privKey;
+  const message = await openpgp.readMessage({ armoredMessage: armored });
+  const { data } = await openpgp.decrypt({ message, decryptionKeys: decKey });
+  return data;
+}
+
+/* ========== UI: Key panes ========== */
+$('btnGenECDH').onclick = () => ecdhGenerate().then(()=>log('Generated ECDH keypair.'));
+$('btnExportPub').onclick = async () => { const v = await idb.get('ecdh_pub_spki_b64u'); if (v) { navigator.clipboard.writeText(v); alert('Copied public key (SPKI b64u)'); } };
+$('btnExportPriv').onclick = async () => { const v = await idb.get('ecdh_prv_pkcs8_b64u'); if (v) { navigator.clipboard.writeText(v); alert('Copied private key (PKCS8 b64u)'); } };
+$('btnSavePeer').onclick = async () => { const v = $('peerPub').value.trim(); if (v) { await idb.set('peer_pub_spki_b64u', v); alert('Saved peer public key.'); } };
+(async () => { const pub = await idb.get('ecdh_pub_spki_b64u'); if (pub) $('myPub').value = pub; })();
+
+$('btnSavePass').onclick = async () => {
+  const alias = $('passAlias').value.trim() || 'default';
+  const pass = $('passphrase').value;
+  if (!pass) return alert('Enter a passphrase');
+  await idb.set(`pass:${alias}`, pass);
+  alert(`Saved passphrase profile "${alias}".`);
+};
+$('btnLoadPass').onclick = async () => {
+  const alias = $('passAlias').value.trim() || 'default';
+  const pass = await idb.get(`pass:${alias}`);
+  if (!pass) return alert('No saved passphrase for this alias.');
+  $('passphrase').value = pass;
+  alert('Loaded passphrase.');
+};
+
+$('btnCheckPGP').onclick = () => {
+  $('pgpState').textContent = window.openpgp ? 'detected' : 'not detected';
+};
+$('btnSavePGP').onclick = async () => {
+  await idb.set('pgp_priv', $('pgpPriv').value.trim());
+  await idb.set('pgp_priv_pass', $('pgpPrivPass').value);
+  await idb.set('pgp_pub', $('pgpPub').value.trim());
+  await idb.set('pgp_peer_pub', $('pgpPeerPub').value.trim());
+  alert('Saved PGP keys.');
+};
+$('btnClearPGP').onclick = async () => {
+  await idb.del('pgp_priv'); await idb.del('pgp_priv_pass'); await idb.del('pgp_pub'); await idb.del('pgp_peer_pub');
+  alert('Cleared PGP keys.');
+};
+
+$('btnModeHelp').onclick = () => {
+  alert(
+`Modes:
+- AES-GCM (Passphrase): quickest start. Share a strong passphrase out of band.
+- ECDH(P-256)+AES-GCM: generate keys, exchange public keys, the app derives a shared AES key automatically.
+- PGP: import your PGP keys. If OpenPGP is present, messages use it end-to-end.`
+  );
+};
+
+/* ========== Send / Receive ========== */
+$('send').onclick = async () => {
+  if (!ws || ws.readyState !== 1) return alert('Not connected');
+  const text = $('text').value;
+  if (!text) return;
+  const mode = modes.current;
+
+  try {
+    let envelope = { type:'msg', mode };
+
+    if (mode === 'pass') {
+      const pass = $('passphrase').value;
+      if (!pass) return alert('Enter passphrase');
+      // derive (reusing salt per session makes decrypt predictable; store salt in IndexedDB and reuse or send once)
+      let salt = await idb.get('pass_salt_b64u');
+      const { key, saltB64u } = await deriveAesFromPassphrase(pass, salt);
+      if (!salt) { await idb.set('pass_salt_b64u', saltB64u); salt = saltB64u; }
+      const iv = randomIv();
+      const ct = await crypto.subtle.encrypt({ name:'AES-GCM', iv }, key, utf8.enc(text));
+      envelope.ciphertext = b64u(ct);
+      envelope.iv = b64u(iv);
+      envelope.kdf = { alg:'PBKDF2', saltB64u: salt, iter:150000, hash:'SHA-256' };
+    }
+
+    else if (mode === 'ecdh') {
+      const peer = (await idb.get('peer_pub_spki_b64u')) || $('peerPub').value.trim() || await idb.get('peer:latest:pub');
+      if (!peer) return alert('Missing peer public key');
+      const { aesKey, saltB64u } = await ecdhDeriveAES(peer);
+      const iv = randomIv();
+      const ct = await crypto.subtle.encrypt({ name:'AES-GCM', iv }, aesKey, utf8.enc(text));
+      envelope.ciphertext = b64u(ct);
+      envelope.iv = b64u(iv);
+      envelope.kdf = { alg:'HKDF', saltB64u, hash:'SHA-256', curve:'P-256' };
+      // also include my public for recipient convenience
+      envelope.pub = await idb.get('ecdh_pub_spki_b64u');
+    }
+
+    else if (mode === 'pgp') {
+      const armored = await pgpEncrypt(text);
+      envelope.armored = armored;
+    }
+
+    ws.send(JSON.stringify(envelope));
+    $('text').value = '';
+    logYou(`<b>You:</b> ${text}`);
+  } catch (e) {
+    console.error(e);
+    alert('Encryption failed: ' + e.message);
+  }
+};
+
+async function decryptInbound(envelope) {
+  if (envelope.mode === 'pass') {
+    const pass = $('passphrase').value;
+    if (!pass) throw new Error('No passphrase');
+    const { key } = await deriveAesFromPassphrase(pass, envelope.kdf?.saltB64u);
+    const pt = await crypto.subtle.decrypt(
+      { name:'AES-GCM', iv: unb64u(envelope.iv) },
+      key,
+      unb64u(envelope.ciphertext)
+    );
+    return utf8.dec(pt);
+  }
+
+  if (envelope.mode === 'ecdh') {
+    // Save sender pubkey if included (helps future sends)
+    if (envelope.pub && envelope._from?.id) {
+      await idb.set(`peer:${envelope._from.id}:pub`, envelope.pub);
+      await idb.set('peer:latest:pub', envelope.pub);
+    }
+    const peer = envelope.pub || (await idb.get('peer_pub_spki_b64u')) || await idb.get('peer:latest:pub');
+    if (!peer) throw new Error('Missing peer public key for ECDH');
+    const myPriv = await importECDHPrivate(); if (!myPriv) throw new Error('No private key');
+    const peerPub = await importECDHPublic(peer);
+    const bits = await crypto.subtle.deriveBits({ name:'ECDH', public: peerPub }, myPriv, 256);
+    // HKDF using sender-provided salt
+    const ikm = await crypto.subtle.importKey('raw', bits, 'HKDF', false, ['deriveKey']);
+    const aesKey = await crypto.subtle.deriveKey(
+      { name:'HKDF', hash:'SHA-256', salt: unb64u(envelope.kdf?.saltB64u || ''), info: utf8.enc('LanMessenger ECDH AES key') },
+      ikm,
+      { name:'AES-GCM', length:256 },
+      false, ['decrypt']
+    );
+    const pt = await crypto.subtle.decrypt(
+      { name:'AES-GCM', iv: unb64u(envelope.iv) },
+      aesKey,
+      unb64u(envelope.ciphertext)
+    );
+    return utf8.dec(pt);
+  }
+
+  if (envelope.mode === 'pgp') {
+    return await pgpDecrypt(envelope.armored);
+  }
+
+  throw new Error('Unknown mode');
+}
+</script>
+</body>
+</html>
